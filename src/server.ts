@@ -12,6 +12,7 @@ import { defineGovernanceTools } from "./mcp/governance.js";
 import { defineAiTools } from "./mcp/ai.js";
 import { defineFindAssetByPath } from "./workflows/find-asset-by-path.js";
 import { defineSummarizeAsset } from "./workflows/summarize-asset.js";
+import { defineTraceMissingLineage } from "./workflows/trace-missing-lineage.js";
 
 export function isReadOnlyMode(): boolean {
   return process.env[READ_ONLY_ENV_VAR] === "true";
@@ -72,6 +73,7 @@ export function createCoalesceCatalogMcpServer(
     ...defineAiTools(client),
     defineFindAssetByPath(client),
     defineSummarizeAsset(client),
+    defineTraceMissingLineage(client),
   ];
 
   for (const def of definitions) {
