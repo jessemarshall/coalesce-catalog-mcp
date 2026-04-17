@@ -1,6 +1,6 @@
 {
   "name": "coalesce-catalog-mcp",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.1",
   "mcpName": "io.github.jessemarshall/coalesce-catalog",
   "description": "MCP server for the Coalesce Catalog Public GraphQL API; covers tables, columns, dashboards, lineage, governance, and asset metadata across the warehouse and BI layer.",
   "main": "dist/index.js",
@@ -20,7 +20,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "preversion": "npm run build && npm audit --omit=dev",
-    "version": "node scripts/sync-version.mjs && git add server.json README.md",
     "prepublishOnly": "npm run build",
     "prepare": "husky"
   },
