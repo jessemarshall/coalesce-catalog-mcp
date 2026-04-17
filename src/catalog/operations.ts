@@ -109,6 +109,55 @@ export const GET_TABLE_DETAIL = /* GraphQL */ `
   }
 `;
 
+export const GET_LINEAGES = /* GraphQL */ `
+  query CatalogGetLineages(
+    $scope: GetLineagesScope
+    $sorting: [LineageSorting!]
+    $pagination: Pagination
+  ) {
+    getLineages(scope: $scope, sorting: $sorting, pagination: $pagination) {
+      totalCount
+      nbPerPage
+      page
+      data {
+        id
+        lineageType
+        parentTableId
+        parentDashboardId
+        childTableId
+        childDashboardId
+        createdAt
+        refreshedAt
+      }
+    }
+  }
+`;
+
+export const GET_FIELD_LINEAGES = /* GraphQL */ `
+  query CatalogGetFieldLineages(
+    $scope: GetFieldLineagesScope!
+    $sorting: [FieldLineageSorting!]
+    $pagination: Pagination
+  ) {
+    getFieldLineages(scope: $scope, sorting: $sorting, pagination: $pagination) {
+      totalCount
+      nbPerPage
+      page
+      data {
+        id
+        lineageType
+        parentColumnId
+        parentDashboardFieldId
+        childColumnId
+        childDashboardId
+        childDashboardFieldId
+        createdAt
+        refreshedAt
+      }
+    }
+  }
+`;
+
 export const GET_TABLE_QUERIES = /* GraphQL */ `
   query CatalogGetTableQueries(
     $scope: GetTableQueriesScope
