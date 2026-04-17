@@ -1,6 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CatalogClient } from "./client.js";
 import { SERVER_NAME, SERVER_VERSION, READ_ONLY_ENV_VAR } from "./constants.js";
+import type { CatalogToolDefinition } from "./catalog/types.js";
+import { defineTableTools } from "./mcp/tables.js";
 
 export function isReadOnlyMode(): boolean {
   return process.env[READ_ONLY_ENV_VAR] === "true";
@@ -25,24 +27,40 @@ WORKFLOW SEAM
   Catalog. When a user needs end-to-end context (node definition + downstream
   dashboards), call both servers and stitch results.
 
-THIS SERVER IS A PHASE-0 SCAFFOLD. Tools will be added in subsequent phases.
-Authentication is already wired; GraphQL endpoint is resolved per region.
+TOOLING NOTES
+- All list tools paginate server-side; responses include \`pagination.hasMore\`.
+  Start with nbPerPage=25-100 and page=0; only fetch deeper pages on demand.
+- Read-only mode: set COALESCE_CATALOG_READ_ONLY=true to drop all mutation
+  tools at registration time. Default is read-write.
 `.trim();
 
-export interface ServerHandle {
-  server: McpServer;
+/**
+ * Whether a tool should be available in read-only mode. Tools default to
+ * "write" (excluded) unless they declare readOnlyHint: true, matching the
+ * transform MCP's convention.
+ */
+function isReadOnlyTool(def: CatalogToolDefinition): boolean {
+  return def.config.annotations?.readOnlyHint === true;
 }
 
 export function createCoalesceCatalogMcpServer(
-  _client: CatalogClient
+  client: CatalogClient
 ): McpServer {
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
     { instructions: SERVER_INSTRUCTIONS }
   );
 
-  // Tool registration will happen here in Phase 2+.
-  // Read-only mode gating will be added alongside the first write tools.
+  const readOnly = isReadOnlyMode();
+  const definitions: CatalogToolDefinition[] = [...defineTableTools(client)];
+
+  for (const def of definitions) {
+    if (readOnly && !isReadOnlyTool(def)) continue;
+    // SDK's handler type demands an index signature on the return; our
+    // narrower ToolResult is structurally compatible but needs a cast.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    server.registerTool(def.name, def.config, def.handler as any);
+  }
 
   return server;
 }
