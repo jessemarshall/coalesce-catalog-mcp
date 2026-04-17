@@ -13,6 +13,7 @@ Built as the catalog-side companion to [`coalesce-transform-mcp`](https://www.np
 |     | Task | Jump to |
 | :-: | ---- | ------- |
 | 🚀 | Get running in 2 minutes | [Quick Start](#quick-start) |
+| 🧭 | Roll out Catalog governance from zero | [Governance rollout](#governance-rollout--best-practices) |
 | 📚 | Understand what context the server ships | [Context Resources](#context-resources) |
 | 🔍 | Find a specific tool | [Tools](#tools) |
 | 💬 | Trigger canned investigation prompts | [Prompts](#prompts) |
@@ -189,14 +190,37 @@ Restart Windsurf. Tools appear under the Cascade chat's MCP panel.
 
 ---
 
+## Governance rollout & best practices
+
+New to Catalog, or rolling it out across an org for the first time? The server ships an opinionated **best-in-class governance playbook** that takes a team from zero to a trusted, governed catalog in 8–12 weeks.
+
+[**`catalog://context/governance-rollout`**](src/resources/context/governance-rollout.md) — 547-line playbook with:
+
+- **Pre-flight checklist** — 6 organizational prerequisites (exec sponsor, named Steward with allocated time, success metric, stakeholder map, budget, incentive model). Hard-stop if any are missing.
+- **9 sequenced phases** — ingestion audit → ownership → metadata → glossary → tagging → lineage → data products → quality checks → review cadence + incident response → adoption. Each phase has a goal, success criterion, effort estimate, and the specific `catalog_*` tool calls that execute it.
+- **Tiering model** (T1/T2/T3) with capacity-grounded guidance (T1 ≤ 5 % of your table count) and how to pick the T1 list from popularity + lineage signals instead of gut instinct.
+- **Roles** — 3 max (Catalog Steward, Domain Owner, Data Steward). Explicit refusal of the RACI-matrix antipattern.
+- **Compliance coverage** — GDPR Data-Subject Request workflow via lineage walks, right-to-delete, retention/residency tags, regulation-scope tags (`regulation:gdpr|ccpa|hipaa|sox|pci`), audit-trail attachment.
+- **Coalesce Transform integration** — description flow, ownership flow, lineage consistency between the two products.
+- **RBAC** — Catalog role model, read-only mode, sensible token-scope defaults.
+- **Incident response runbook** — 5-step flow using Catalog as impact-assessment source of truth.
+- **Change management** — 7 tactics for driving adoption, ordered by effectiveness. Anti-patterns included.
+- **KPIs** — 10 measurable targets with per-metric ownership, not vanity metrics.
+- **Quick-start recipe** — 5 tool calls you can run on Monday morning to show progress by end of week.
+
+Use the [`catalog-governance-rollout`](#prompts) MCP prompt to kick off a guided walkthrough that grounds advice in *your* account's live state (top-25 tables, current coverage gaps) rather than generic principles.
+
+---
+
 ## Context Resources
 
-The server ships **4 static markdown resources** under the `catalog://context/*` URI scheme. Your client fetches them via `resources/list` + `resources/read`; agents cite them to orient quickly or when routing between tools.
+The server ships **5 static markdown resources** under the `catalog://context/*` URI scheme. Your client fetches them via `resources/list` + `resources/read`; agents cite them to orient quickly or when routing between tools.
 
 - **`catalog://context/overview`** — Entity graph (source → database → schema → table/column), cross-cutting annotations (tags, terms, data products, quality, ownership), lineage provenance, auth, and region setup.
 - **`catalog://context/tool-routing`** — Decision tree mapping common user questions to the right tool. Use this if you're unsure whether to reach for `catalog_search_*`, `catalog_get_*`, or a composite workflow.
 - **`catalog://context/ecosystem-boundaries`** — When to pick this server vs `coalesce-transform-mcp`. Explains the workflow seam where Transform-authored nodes materialise Catalog-indexed tables.
 - **`catalog://context/investigation-playbook`** — Step-by-step flow for triaging Catalog-related customer tickets (missing lineage, missing descriptions, PII sweeps).
+- **`catalog://context/governance-rollout`** — Best-in-class rollout playbook. See the [Governance rollout & best practices](#governance-rollout--best-practices) section above for the summary.
 
 Content lives in [`src/resources/context/`](src/resources/context) — edit the markdown, rebuild, and the server picks it up on restart. There's no per-user override mechanism yet; fork the repo or overlay your own server alongside for org-specific context.
 
@@ -379,9 +403,10 @@ Content lives in [`src/resources/context/`](src/resources/context) — edit the 
 
 ## Prompts
 
-Five reusable prompt templates kick off common workflows without re-reciting the tool chain. Invoke via `prompts/get` in your MCP client (in Claude Code, type `/` and look for the catalog- prefixed entries).
+Six reusable prompt templates kick off common workflows without re-reciting the tool chain. Invoke via `prompts/get` in your MCP client (in Claude Code, type `/` and look for the catalog- prefixed entries).
 
 - **`catalog-start-here`** - Orientation: reads `overview` + `tool-routing` context and gives the model the routing defaults it should follow.
+- **`catalog-governance-rollout`** - Kicks off the [governance playbook](#governance-rollout--best-practices) walkthrough grounded in your account's live state (runs source / database / top-25 table sweeps first, then phase-by-phase recommendations).
 - **`catalog-asset-summary`** - Given a path or UUID, run `find_asset_by_path` + `summarize_asset` and present the result.
 - **`catalog-find-consumers`** - Enumerate everything downstream of a table: child tables, dashboards, and SQL queries that read it.
 - **`catalog-investigate-lineage-gaps`** - Run `trace_missing_lineage` and walk each finding with a proposed remediation (upsert_lineages call) — asks for approval before executing.
