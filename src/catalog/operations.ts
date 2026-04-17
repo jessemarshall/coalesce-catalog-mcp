@@ -109,6 +109,92 @@ export const GET_TABLE_DETAIL = /* GraphQL */ `
   }
 `;
 
+const DASHBOARD_SUMMARY_FIELDS = /* GraphQL */ `
+  id
+  name
+  externalId
+  externalSlug
+  description
+  type
+  url
+  folderPath
+  sourceId
+  popularity
+  isVerified
+  isDeprecated
+  deletedAt
+  deprecatedAt
+`;
+
+const DASHBOARD_DETAIL_FIELDS = /* GraphQL */ `
+  ${DASHBOARD_SUMMARY_FIELDS}
+  createdAt
+  updatedAt
+  descriptionRaw
+  externalDescription
+  externalDescriptionSource
+  isDescriptionGenerated
+  folderUrl
+  slug
+  verifiedAt
+  verifiedByUserId
+  deprecatedByUserId
+  lastDescribedByUserId
+  ownerEntities {
+    id
+    userId
+    user {
+      id
+      email
+      fullName
+    }
+  }
+  teamOwnerEntities {
+    id
+    teamId
+    team {
+      id
+      name
+      email
+    }
+  }
+  tagEntities {
+    id
+    tag {
+      id
+      label
+      color
+    }
+  }
+`;
+
+export const GET_DASHBOARDS_SUMMARY = /* GraphQL */ `
+  query CatalogGetDashboardsSummary(
+    $scope: GetDashboardsScope
+    $sorting: [DashboardSorting!]
+    $pagination: Pagination
+  ) {
+    getDashboards(scope: $scope, sorting: $sorting, pagination: $pagination) {
+      totalCount
+      nbPerPage
+      page
+      data {
+        ${DASHBOARD_SUMMARY_FIELDS}
+      }
+    }
+  }
+`;
+
+export const GET_DASHBOARD_DETAIL = /* GraphQL */ `
+  query CatalogGetDashboardDetail($ids: [String!]!) {
+    getDashboards(scope: { ids: $ids }, pagination: { nbPerPage: 1, page: 0 }) {
+      data {
+        ${DASHBOARD_DETAIL_FIELDS}
+      }
+    }
+  }
+`;
+
 const COLUMN_SUMMARY_FIELDS = /* GraphQL */ `
   id
   name
