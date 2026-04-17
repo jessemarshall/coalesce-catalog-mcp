@@ -4,6 +4,7 @@ import { SERVER_NAME, SERVER_VERSION, READ_ONLY_ENV_VAR } from "./constants.js";
 import type { CatalogToolDefinition } from "./catalog/types.js";
 import { defineTableTools } from "./mcp/tables.js";
 import { defineLineageTools } from "./mcp/lineage.js";
+import { defineColumnTools } from "./mcp/columns.js";
 
 export function isReadOnlyMode(): boolean {
   return process.env[READ_ONLY_ENV_VAR] === "true";
@@ -56,6 +57,7 @@ export function createCoalesceCatalogMcpServer(
   const definitions: CatalogToolDefinition[] = [
     ...defineTableTools(client),
     ...defineLineageTools(client),
+    ...defineColumnTools(client),
   ];
 
   for (const def of definitions) {

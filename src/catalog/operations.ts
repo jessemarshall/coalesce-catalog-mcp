@@ -109,6 +109,97 @@ export const GET_TABLE_DETAIL = /* GraphQL */ `
   }
 `;
 
+const COLUMN_SUMMARY_FIELDS = /* GraphQL */ `
+  id
+  name
+  externalId
+  tableId
+  dataType
+  description
+  isNullable
+  isPii
+  isPrimaryKey
+  isDescriptionGenerated
+  sourceOrder
+  deletedAt
+`;
+
+const COLUMN_DETAIL_FIELDS = /* GraphQL */ `
+  ${COLUMN_SUMMARY_FIELDS}
+  descriptionRaw
+  externalDescription
+  externalDescriptionSource
+  sourceId
+  describedByColumnId
+  createdAt
+  updatedAt
+  tagEntities {
+    id
+    tag {
+      id
+      label
+      color
+    }
+  }
+`;
+
+export const GET_COLUMNS_SUMMARY = /* GraphQL */ `
+  query CatalogGetColumnsSummary(
+    $scope: GetColumnsScope
+    $sorting: [ColumnSorting!]
+    $pagination: Pagination
+  ) {
+    getColumns(scope: $scope, sorting: $sorting, pagination: $pagination) {
+      totalCount
+      nbPerPage
+      page
+      data {
+        ${COLUMN_SUMMARY_FIELDS}
+      }
+    }
+  }
+`;
+
+export const GET_COLUMN_DETAIL = /* GraphQL */ `
+  query CatalogGetColumnDetail($ids: [String!]!) {
+    getColumns(scope: { ids: $ids }, pagination: { nbPerPage: 1, page: 0 }) {
+      data {
+        ${COLUMN_DETAIL_FIELDS}
+      }
+    }
+  }
+`;
+
+export const GET_COLUMN_JOINS = /* GraphQL */ `
+  query CatalogGetColumnJoins(
+    $scope: GetColumnJoinsScope
+    $sorting: [ColumnJoinSorting!]
+    $pagination: Pagination
+  ) {
+    getColumnJoins(scope: $scope, sorting: $sorting, pagination: $pagination) {
+      totalCount
+      nbPerPage
+      page
+      data {
+        id
+        count
+        firstColumnId
+        secondColumnId
+        firstColumn {
+          id
+          name
+          tableId
+        }
+        secondColumn {
+          id
+          name
+          tableId
+        }
+      }
+    }
+  }
+`;
+
 export const GET_LINEAGES = /* GraphQL */ `
   query CatalogGetLineages(
     $scope: GetLineagesScope
