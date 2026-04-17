@@ -1,0 +1,4004 @@
+# AUTO-GENERATED via `npm run codegen`. Do not edit manually.
+# Source: https://api.castordoc.com/public/graphql
+
+"""This directive is used to provide an example value for a field."""
+directive @example(value: String) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | OBJECT | INPUT_OBJECT | INTERFACE | SCALAR | ARGUMENT_DEFINITION
+
+"""This directive is used to group types, query and mutation together."""
+directive @group(name: String) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | OBJECT | INPUT_OBJECT | INTERFACE | SCALAR | ARGUMENT_DEFINITION | ENUM
+
+type Query {
+  """
+  Perform a semantic search on your ingested SQL queries, using natural language and return 10 relevant results
+  """
+  searchQueries(
+    """Filters used to refine results. Note: all scopes are additive"""
+    scope: SearchQueriesScope
+
+    """Expected input object to run the query or mutation"""
+    data: SearchQueriesInput!
+  ): SearchQueriesOutput!
+
+  """
+  Starts an AI Assistant job and returns its `jobId`. Use the [`getAiAssistantJobResult`](./get-ai-assistant-job-result.mdx) query to poll for the job result.
+  """
+  addAiAssistantJob(
+    """Expected input object to run the query or mutation"""
+    data: AddAiAssistantJobInput!
+  ): AddAiAssistantJobOutput!
+
+  """
+  Retrieves the result of an AI Assistant job by its `jobId`. Use the [`addAiAssistantJob`](./add-ai-assistant-job.mdx) query to start a job.
+  """
+  getAiAssistantJobResult(
+    """Expected input object to run the query or mutation"""
+    data: JobResultInput!
+  ): GetAiAssistantJobResultOutput!
+
+  """
+  Get many columns, with optional scoping, sorting and pagination
+  
+  ### Allowed relations
+  
+  You can request the following relations in the response:
+  
+  - `tagEntities`
+  - `tagEntities.tag`
+  """
+  getColumns(
+    """Pagination options for the result"""
+    pagination: Pagination
+
+    """Sorting options for results"""
+    sorting: [ColumnSorting!]
+
+    """Filters used to refine results. Note: all scopes are additive"""
+    scope: GetColumnsScope
+  ): GetColumnsOutput!
+
+  """
+  Get many column joins, with optional scoping, sorting and pagination
+  
+  ### Allowed relations
+  
+  You can request the following relations in the response:
+  
+  - `firstColumn`
+  - `firstColumn.table`
+  - `secondColumn`
+  - `secondColumn.table`
+  """
+  getColumnJoins(
+    """Pagination options for the result"""
+    pagination: Pagination
+
+    """Sorting options for results"""
+    sorting: [ColumnJoinSorting!]
+
+    """Filters used to refine results. Note: all scopes are additive"""
+    scope: GetColumnJoinsScope
+  ): GetColumnJoinsOutput!
+
+  """
+  Get many dashboards, with optional scoping, sorting and pagination
+  
+  ### Allowed relations
+  
+  You can request the following relations in the response:
+  
+  - `entityEditors`
+  - `entityEditors.sourceUser`
+  - `entityEditors.sourceUser.unifiedUser`
+  - `ownerEntities`
+  - `ownerEntities.ownerLabel`
+  - `ownerEntities.unifiedUser`
+  - `ownerEntities.user`
+  - `source`
+  - `tagEntities`
+  - `tagEntities.tag`
+  - `teamOwnerEntities`
+  - `teamOwnerEntities.ownerLabel`
+  - `teamOwnerEntities.team`
+  - `verifiedBy`
+  """
+  getDashboards(
+    """Pagination options for the result"""
+    pagination: Pagination
+
+    """Sorting options for results"""
+    sorting: [DashboardSorting!]
+
+    """Filters used to refine results. Note: all scopes are additive"""
+    scope: GetDashboardsScope
+  ): GetDashboardsOutput!
+
+  """
+  Get many databases, with optional scoping, sorting and pagination
+  
+  ### Allowed relations
+  
+  You can request the following relations in the response:
+  
+  - `warehouse`
+  """
+  getDatabases(
+    """Pagination options for the result"""
+    pagination: Pagination
+
+    """Filters used to refine results. Note: all scopes are additive"""
+    scope: GetDatabasesScope
+  ): GetDatabasesOutput!
+
+  """
+  Get many Data Products, with optional scoping, sorting and pagination
+  
+  ### Allowed relations
+  
+  You can request the following relations in the response:
+  
+  - `dashboard`
+  - `dashboard.tagEntities`
+  - `dashboard.tagEntities.tag`
+  - `table`
+  - `table.tagEntities`
+  - `table.tagEntities.tag`
+  - `term`
+  - `term.tagEntities`
+  - `term.tagEntities.tag`
+  """
+  getDataProducts(
+    """Pagination options for the result"""
+    pagination: Pagination
+
+    """Sorting options for results"""
+    sorting: [DataProductSorting!]
+
+    """Filters used to refine results. Note: all scopes are additive"""
+    scope: GetDataProductScope
+  ): GetDataProductOutput!
+
+  """
+  Get many Pinned Assets, with optional scoping, sorting and pagination
+  
+  ### Allowed relations
+  
+  You can request the following relations in the response:
+  
+  - `fromDashboard.source`
+  - `fromDashboard`
+  - `fromTable.schema.database.warehouse`
+  - `fromTable.schema.database`
+  - `fromTable.schema`
+  - `fromTable`
+  - `fromTerm.parentTerm`
+  - `fromTerm`
+  - `toColumn.table.schema.database.warehouse`
+  - `toColumn.table.schema.database`
+  - `toColumn.table.schema`
+  - `toColumn.table`
+  - `toColumn`
+  - `toDashboard.source`
+  - `toDashboard`
+  - `toDashboardField.dashboard.source`
+  - `toDashboardField.dashboard`
+  - `toDashboardField`
+  - `toTable.schema.database.warehouse`
+  - `toTable.schema.database`
+  - `toTable.schema`
+  - `toTable`
+  - `toTerm.parentTerm`
+  - `toTerm`
+  """
+  getPinnedAssets(
+    """Pagination options for the result"""
+    pagination: Pagination
+
+    """Sorting options for results"""
+    sorting: [EntitiesLinkSorting!]
+
+    """Filters used to refine results. Note: all scopes are additive"""
+    scope: GetEntitiesLinksScope
+  ): GetEntitiesLinkOutput!
+
+  """
+  Get many Field Lineages, with optional scoping, sorting and pagination
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  getFieldLineages(
+    """Pagination options for the result"""
+    pagination: Pagination
+
+    """Sorting options for results"""
+    sorting: [FieldLineageSorting!]
+
+    """Filters used to refine results. Note: all scopes are additive"""
+    scope: GetFieldLineagesScope!
+  ): GetFieldLineagesOutput!
+
+  """
+  Get many Lineages, with optional scoping, sorting and pagination
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  getLineages(
+    """Pagination options for the result"""
+    pagination: Pagination
+
+    """Sorting options for results"""
+    sorting: [LineageSorting!]
+
+    """Filters used to refine results. Note: all scopes are additive"""
+    scope: GetLineagesScope
+  ): GetLineagesOutput!
+
+  """
+  Get many Quality Checks, with optional scoping, sorting and pagination
+  
+  ### Allowed relations
+  
+  You can request the following relations in the response:
+  
+  - `column`
+  - `table`
+  """
+  getDataQualities(
+    """Pagination options for the result"""
+    pagination: Pagination
+
+    """Filters used to refine results. Note: all scopes are additive"""
+    scope: GetQualityChecksScope
+  ): GetQualityChecksOutput!
+
+  """
+  Get many schemas, with optional scoping, sorting and pagination
+  
+  ### Allowed relations
+  
+  You can request the following relations in the response:
+  
+  - `database`
+  - `database.warehouse`
+  """
+  getSchemas(
+    """Pagination options for the result"""
+    pagination: Pagination
+
+    """Filters used to refine results. Note: all scopes are additive"""
+    scope: GetSchemasScope
+  ): GetSchemasOutput!
+
+  """
+  Get many sources, with optional scoping, sorting and pagination
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  getSources(
+    """Pagination options for the result"""
+    pagination: Pagination
+
+    """Filters used to refine results. Note: all scopes are additive"""
+    scope: GetSourcesScope
+  ): GetSourcesOutput!
+
+  """
+  Get many tables, with optional scoping, sorting and pagination
+  
+  ### Allowed relations
+  
+  You can request the following relations in the response:
+  
+  - `entityEditors`
+  - `entityEditors.sourceUser`
+  - `entityEditors.sourceUser.unifiedUser`
+  - `externalLinks`
+  - `ownerEntities`
+  - `ownerEntities.ownerLabel`
+  - `ownerEntities.unifiedUser`
+  - `ownerEntities.user`
+  - `schema`
+  - `schema.database`
+  - `schema.database.warehouse`
+  - `tagEntities`
+  - `tagEntities.tag`
+  - `teamOwnerEntities`
+  - `teamOwnerEntities.ownerLabel`
+  - `teamOwnerEntities.team`
+  - `verifiedBy`
+  """
+  getTables(
+    """Pagination options for the result"""
+    pagination: Pagination
+
+    """Sorting options for results"""
+    sorting: [TableSorting!]
+
+    """Filters used to refine results. Note: all scopes are additive"""
+    scope: GetTablesScope
+  ): GetTablesOutput!
+
+  """Get queries associated with tables with scoping"""
+  getTableQueries(
+    """Pagination options for the result"""
+    pagination: Pagination
+
+    """Sorting options for results"""
+    sorting: [QuerySorting!]
+
+    """Filters used to refine results. Note: all scopes are additive"""
+    scope: GetTableQueriesScope
+  ): GetTableQueriesOutput!
+
+  """
+  Get many tags, with optional scoping, sorting and pagination
+  
+  
+  
+  All tags will be retrieved, including tags on soft deleted and hidden entities. This means tags on:
+  
+  - soft deleted columns, tables, dashboards, terms and any other kind of assets
+  - hidden assets: databases, schemas, etc
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  getTags(
+    """Pagination options for the result"""
+    pagination: Pagination
+
+    """Sorting options for results"""
+    sorting: [TagSorting!]
+
+    """Filters used to refine results. Note: all scopes are additive"""
+    scope: GetTagsScope
+  ): GetTagsOutput!
+
+  """
+  Get many teams, with optional scoping, sorting and pagination
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  getTeams(
+    """Pagination options for the result"""
+    pagination: Pagination
+  ): [GetTeamsOutput!]!
+
+  """
+  Get many Terms, with optional scoping, sorting and pagination
+  
+  ### Allowed relations
+  
+  You can request the following relations in the response:
+  
+  - `childrenTerms`
+  - `entityEditors`
+  - `entityEditors.sourceUser`
+  - `entityEditors.sourceUser.unifiedUser`
+  - `linkedTag`
+  - `ownerEntities`
+  - `ownerEntities.ownerLabel`
+  - `ownerEntities.unifiedUser`
+  - `ownerEntities.user`
+  - `parentTerm`
+  - `tagEntities`
+  - `tagEntities.tag`
+  - `teamOwnerEntities`
+  - `teamOwnerEntities.ownerLabel`
+  - `teamOwnerEntities.team`
+  - `verifiedBy`
+  """
+  getTerms(
+    """Pagination options for the result"""
+    pagination: Pagination
+
+    """Sorting options for results"""
+    sorting: [TermSorting!]
+
+    """Filters used to refine results. Note: all scopes are additive"""
+    scope: GetTermsScope
+  ): GetTermsOutput!
+
+  """
+  Get many user, with optional scoping, sorting and pagination
+  
+  ### Allowed relations
+  
+  You can request the following relations in the response:
+  
+  - `ownerEntities`
+  - `unifiedUser`
+  """
+  getUsers(
+    """Pagination options for the result"""
+    pagination: Pagination
+  ): [GetUsersOutput!]!
+}
+
+"""Response from the executed query or mutation"""
+type SearchQueriesOutput {
+  """Field containing the response from the executed query or mutation"""
+  data: [SearchQueryResult!]!
+}
+
+"""A single query result"""
+type SearchQueryResult {
+  """Query author information"""
+  author: SearchQueryResultAuthor
+
+  """Query matching provided question"""
+  query: String!
+
+  """Table IDs used by this query"""
+  tableIds: [String!]!
+}
+
+"""Query author information"""
+type SearchQueryResultAuthor {
+  """Query author email"""
+  email: String
+
+  """Query author name"""
+  name: String
+}
+
+"""
+Allow to refine selection of the results using multiple scopes. Note: all scopes are additive
+"""
+input SearchQueriesScope {
+  """
+  How filter should capture provided table IDs. Default to "ALL"
+  """
+  filterMode: FilterTablesMode = ALL
+
+  """Filter queries using provided table IDs (max 10 ids)"""
+  tableIds: [String!]!
+}
+
+"""How filter should capture provided table IDs"""
+enum FilterTablesMode {
+  """At least one provided table IDs must be used by retrieved queries"""
+  ANY
+
+  """All provided table IDs must be used by retrieved queries"""
+  ALL
+}
+
+"""Input object expected by the query or mutation"""
+input SearchQueriesInput {
+  """
+  Question used to find related queries. Must be less than 256 words and 1024 characters
+  """
+  question: String!
+
+  """
+  Enforce translation of the provided question to english. Can enhance results precision, however take more time
+  """
+  translateQuestionToEnglish: Boolean
+}
+
+"""Response from the executed query or mutation"""
+type AddAiAssistantJobOutput {
+  """Field containing the response from the executed query or mutation"""
+  data: ConverseWithAssistantOutput!
+}
+
+"""Information about the started AI Assistant job"""
+type ConverseWithAssistantOutput {
+  """The assistant message ID (answer)"""
+  id: String!
+
+  """
+  ID of the job processing the response. Can be used to pull the job result
+  """
+  jobId: String!
+}
+
+"""Input object expected by the query or mutation"""
+input AddAiAssistantJobInput {
+  """
+  The user's email. A Catalog account is required to interact with the AI Assistant, if the user doesn't have one, an error will be raised
+  """
+  email: String!
+
+  """
+  The external identifier acts as a unique key that links a conversation across multiple messages.       This enables the AI Assistant to maintain continuity and reuse context, allowing it to deliver       consistent and relevant responses throughout the conversation.
+  """
+  externalConversationId: String!
+
+  """Origin of the job (only API or DUST allowed)"""
+  origin: Origin = API
+
+  """
+  Question that will be used to find related assets. Must be less than 10000 characters
+  """
+  question: String!
+}
+
+"""The origin of the job"""
+enum Origin {
+  """Job originated from the API"""
+  API
+
+  """Job originated from the main application"""
+  APP
+
+  """Job originated from the Dust agent"""
+  DUST
+
+  """Job originated from the chrome extension"""
+  EXTENSION
+
+  """Job originated from the Microsoft Teams extension"""
+  MS_TEAMS
+
+  """Job originated from the Slack app"""
+  SLACK_BOT
+}
+
+"""Response from the executed query or mutation"""
+type GetAiAssistantJobResultOutput {
+  """Field containing the response from the executed query or mutation"""
+  data: AiAssistantJobResult!
+}
+
+"""Status and result of the AI Assistant job"""
+type AiAssistantJobResult {
+  """The answer to the question"""
+  answer: String!
+
+  """The list of assets referenced to generate the answer"""
+  assets: [AssetWithInternalLink!]!
+
+  """The current status of the job"""
+  status: JobStatus!
+}
+
+"""Assets referenced in the AI Assistant job result"""
+type AssetWithInternalLink {
+  """ID of the asset"""
+  id: String!
+
+  """The internal link of the asset (link to the asset in Catalog)"""
+  internalLink: String!
+
+  """The name of the asset"""
+  name: String!
+
+  """The url of the asset"""
+  url: String!
+}
+
+"""The status of the worker job"""
+enum JobStatus {
+  """Job has been added to the queue"""
+  ADDED
+
+  """Job is currently being processed"""
+  ACTIVE
+
+  """Job has finished successfully"""
+  COMPLETED
+
+  """Job has failed during execution"""
+  FAILED
+
+  """Job has failed after all retry attempts"""
+  RETRIES_EXHAUSTED
+}
+
+"""Input object expected by the query or mutation"""
+input JobResultInput {
+  """
+  The number of seconds to delay before returning the result if the job is not finished
+  """
+  delaySeconds: Int
+
+  """Job ID to retrieve the result for"""
+  id: String!
+}
+
+"""Paginated response from the executed query or mutation"""
+type GetColumnsOutput {
+  """Number of entities to return per page"""
+  nbPerPage: Int!
+
+  """The page number (start at 0)"""
+  page: Int
+
+  """The total number of entities"""
+  totalCount: Int!
+
+  """Field containing the response from the executed query or mutation"""
+  data: [Column!]!
+}
+
+"""
+A column represents a single field within a table. Each column is linked to a table and contains metadata such as data type, description, and technical identifiers.
+"""
+type Column {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+
+  """The data type for the column. For example: INTEGER"""
+  dataType: String!
+
+  """The Catalog documentation for this column"""
+  descriptionRaw: String
+
+  """The documentation from the source for this column"""
+  externalDescription: String
+
+  """The source of the documentation for this column"""
+  externalDescriptionSource: ColumnExternalDescriptionSource
+
+  """The technical column identifier from the warehouse internal structure"""
+  externalId: String!
+
+  """True if the description has been generated, false otherwise"""
+  isDescriptionGenerated: Boolean
+
+  """True if this column is nullable"""
+  isNullable: Boolean!
+
+  """True if this column is PII related"""
+  isPii: Boolean
+
+  """True if this column is a primary key"""
+  isPrimaryKey: Boolean
+
+  """The column name"""
+  name: String!
+
+  """
+  The original column position index as imported from the source warehouse
+  """
+  sourceOrder: Int
+
+  """The column is described by this column id"""
+  describedByColumnId: String
+
+  """The column belongs to this account ID"""
+  accountId: String!
+
+  """The column belongs to this source ID"""
+  sourceId: String!
+
+  """The column belongs to this table ID"""
+  tableId: String!
+
+  """The column belongs to this table ID"""
+  table: Table!
+
+  """The tag entities belonging to this column"""
+  tagEntities: [TagEntity!]!
+
+  """Date and time the resource was created"""
+  createdAt: Timestamp!
+
+  """Date and time the resource was deleted"""
+  deletedAt: Timestamp
+
+  """Date and time the resource was last updated"""
+  updatedAt: Timestamp!
+
+  """The column custom description or the external one if empty"""
+  description: String!
+}
+
+"""Column External Sources of documentation available"""
+enum ColumnExternalDescriptionSource {
+  """Documentation from Catalog public API"""
+  API
+
+  """Documentation from your Coalesce"""
+  COALESCE
+
+  """Documentation from your dbt"""
+  DBT
+
+  """Documentation from your warehouse"""
+  DATABASE
+
+  """Documentation generated by Catalog"""
+  CASTOR
+
+  """Documentation from your Looker"""
+  LOOKER
+}
+
+"""The role of a Catalog user restricting access to Catalog features."""
+enum UserRole {
+  """Full administrative access with all privileges"""
+  ADMIN
+
+  """Can view and contribute to content"""
+  CONTRIBUTOR
+
+  """Partial administrative access"""
+  STEWARD
+
+  """Read-only access to content"""
+  VIEWER
+}
+
+"""
+The javascript `Date` as integer. Type represents date and time as number of milliseconds from start of UNIX epoch.
+"""
+scalar Timestamp
+
+"""
+The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf).
+"""
+scalar JSON
+
+"""The user entity that authenticate in the Catalog application"""
+type User {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+
+  """The avatar url of the user"""
+  avatarUrl: String
+
+  """The email of the user"""
+  email: String!
+
+  """external id of the user when synchronized from an external source"""
+  externalId: String
+
+  """The first name of the user"""
+  firstName: String!
+
+  """The last name of the user"""
+  lastName: String!
+
+  """The role of the user in the account"""
+  role: UserRole!
+
+  """The status of the user in the account"""
+  status: UserStatus!
+
+  """The entities owned by the user"""
+  ownerEntities: [OwnerEntity!]!
+
+  """The precomputed unifiedId"""
+  unifiedId: String!
+
+  """The unified user linked to that user."""
+  unifiedUser: UnifiedUser!
+
+  """Date and time the resource was created"""
+  createdAt: Timestamp!
+
+  """Date and time the resource was last updated"""
+  updatedAt: Timestamp!
+
+  """The full name of the user"""
+  fullName: String!
+}
+
+"""The current status of the user (e.g. pending, active)"""
+enum UserStatus {
+  ACTIVATED
+  PENDING
+  SUSPENDED
+}
+
+"""
+A dashboard represents a collection of visualizations and reports, providing insights into data. Each dashboard contains metadata, documentation, and links to its source and related entities.
+"""
+type Dashboard {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+
+  """
+  The Catalog documentation for this dashboard, as raw text. Can contains Markdown.
+  """
+  descriptionRaw: String
+
+  """
+  Catalog description in Lexical format (see https://lexical.dev/ documentation)
+  """
+  descriptionStateLexical: JSON
+
+  """The source of the documentation for this dashboard"""
+  externalDescriptionSource: DashboardExternalDescriptionSource
+
+  """The documentation from the source for this dashboard"""
+  externalDescription: String
+
+  """The external ID of the dashboard"""
+  externalId: String!
+
+  """The external slug of the dashboard"""
+  externalSlug: String
+
+  """
+  The folder path inside the external data source. Format is root/folder1/folder2
+  """
+  folderPath: String!
+
+  """The url of the folder where the dashboard lies in the source"""
+  folderUrl: String
+
+  """True if the description has been generated, false otherwise"""
+  isDescriptionGenerated: Boolean
+
+  """The dashboard name"""
+  name: String!
+
+  """·The dashboard popularity rated out of 1000000"""
+  popularity: Int
+
+  """Unique Catalog slug of the resource"""
+  slug: String!
+
+  """The dashboard's type"""
+  type: DashboardType!
+
+  """The dashboard url in the source"""
+  url: String!
+
+  """The dashboard was deprecated by the user belonging to this ID"""
+  deprecatedByUserId: String
+  entityEditors: [EntityEditor!]!
+
+  """The dashboard was last described be the user belonging to this ID"""
+  lastDescribedByUserId: String
+
+  """The individual owners of the dashboard"""
+  ownerEntities: [OwnerEntity!]!
+
+  """The dashboard belongs to this data source ID"""
+  sourceId: String!
+
+  """The dashboard belongs to this data source"""
+  source: Source!
+
+  """The tag entities belonging to this dashboard"""
+  tagEntities: [TagEntity!]!
+
+  """The team owners of the dashboard"""
+  teamOwnerEntities: [TeamOwnerEntity!]!
+
+  """The dashboard is verified by the user belonging to this ID"""
+  verifiedByUserId: String
+
+  """The dashboard is verified by this user"""
+  verifiedBy: User
+
+  """The time at which the dashboard was deprecated"""
+  deprecatedAt: Timestamp
+
+  """The time at which the dashboard was verified"""
+  verifiedAt: Timestamp
+  createdAt: Timestamp!
+  deletedAt: Timestamp
+  updatedAt: Timestamp!
+
+  """The dashboard custom rawDescription or the external one if empty"""
+  description: String!
+
+  """Whether this dashboard has been marked as deprecated"""
+  isDeprecated: Boolean!
+
+  """Whether this dashboard has been marked as verified"""
+  isVerified: Boolean!
+}
+
+"""Dashboard External Sources of documentation available"""
+enum DashboardExternalDescriptionSource {
+  """Generated by Catalog"""
+  CASTOR
+
+  """From your visualization tool"""
+  VISUALIZATION
+}
+
+"""The flavour of dashboard (e.g. tableau)"""
+enum DashboardType {
+  """Visualization composed of one or more tiles"""
+  DASHBOARD
+
+  """Atomic visualization component"""
+  TILE
+
+  """Visualization modeling layer with fields"""
+  VIZ_MODEL
+}
+
+type DataProduct {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+
+  """The data product’s cover URL"""
+  coverUrl: String
+
+  """The dashboard id marked as data product"""
+  dashboardId: String
+
+  """The dashboard marked as data product"""
+  dashboard: Dashboard
+
+  """The table id marked as data product"""
+  tableId: String
+
+  """The table marked as data product"""
+  table: Table
+
+  """The knowledge page id marked as data product"""
+  termId: String
+
+  """The knowledge page marked as data product"""
+  term: Term
+
+  """Date and time the resource was created"""
+  createdAt: Timestamp!
+}
+
+"""
+A table represents a collection of data stored in a database. Each table contains columns, metadata, documentation, and links to its related entities.
+"""
+type Table {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+
+  """
+  The Catalog documentation for this table, as raw text. Can contain Markdown.
+  """
+  descriptionRaw: String
+
+  """
+  Catalog description in Lexical format (see https://lexical.dev/ documentation)
+  """
+  descriptionStateLexical: JSON
+
+  """The documentation from the source for this table"""
+  externalDescription: String
+
+  """The source of the documentation for this table"""
+  externalDescriptionSource: TableExternalDescriptionSource
+
+  """The technical table identifier from the warehouse table structure"""
+  externalId: String!
+
+  """True if the description has been generated, false otherwise"""
+  isDescriptionGenerated: Boolean
+
+  """The table name"""
+  name: String!
+
+  """The number of queries on which popularity is based"""
+  numberOfQueries: Int
+
+  """·The table popularity rated out of 1000000"""
+  popularity: Int
+
+  """The Catalog slug of the table"""
+  slug: String!
+
+  """The size of the table (in megabytes)"""
+  tableSize: Int
+
+  """The type of table asset: e.g. view, table"""
+  tableType: TableType!
+
+  """The transformation source technology of this table"""
+  transformationSource: TransformationSource
+
+  """The external url to the table"""
+  url: String
+
+  """The table was deprecated by the user belonging to this ID"""
+  deprecatedByUserId: String
+
+  """The editors associated to this table"""
+  entityEditors: [EntityEditor!]!
+
+  """External Links of a table"""
+  externalLinks: [ExternalLink!]
+
+  """The table was last described be the user belonging to this ID"""
+  lastDescribedByUserId: String
+
+  """The individual owners of the table"""
+  ownerEntities: [OwnerEntity!]!
+
+  """The table belongs to this schema ID"""
+  schemaId: String!
+
+  """The table belongs to this schema"""
+  schema: Schema!
+
+  """Tag associated to this table"""
+  tagEntities: [TagEntity!]!
+
+  """The team owners of the table"""
+  teamOwnerEntities: [TeamOwnerEntity!]!
+
+  """The table is verified by the user belonging to this ID"""
+  verifiedByUserId: String
+
+  """The table is verified by this user"""
+  verifiedBy: User
+
+  """The time at which the table was deprecated"""
+  deprecatedAt: Timestamp
+
+  """The last datetime at which we queried for this table freshness"""
+  lastQueriedAt: Timestamp
+
+  """The last known datetime of refresh for this table"""
+  lastRefreshedAt: Timestamp
+
+  """The time at which the table was certified"""
+  verifiedAt: Timestamp
+
+  """Date and time the resource was created"""
+  createdAt: Timestamp!
+
+  """Date and time the resource was deleted"""
+  deletedAt: Timestamp
+
+  """Date and time the resource was last updated"""
+  updatedAt: Timestamp!
+
+  """The table custom rawDescription or the external one if empty"""
+  description: String!
+
+  """Whether this table has been marked as deprecated"""
+  isDeprecated: Boolean!
+
+  """Whether this table has been marked as verified"""
+  isVerified: Boolean!
+}
+
+"""Table External Sources of documentation available"""
+enum TableExternalDescriptionSource {
+  """Description pushed via the public API"""
+  API
+
+  """Description originating from coalesce"""
+  COALESCE
+
+  """Description originating from dbt"""
+  DBT
+
+  """Description originating from a customer warehouse"""
+  DATABASE
+
+  """Description generated by Catalog"""
+  CASTOR
+}
+
+"""The possible types for a table"""
+enum TableType {
+  """
+  A Snowflake specific table type, is dynamically updated depending on some criteria
+  """
+  DYNAMIC_TABLE
+
+  """Table from an external source"""
+  EXTERNAL
+
+  """Standard table"""
+  TABLE
+
+  """Topic or subject-specific table"""
+  TOPIC
+
+  """Virtual table defined by a query"""
+  VIEW
+}
+
+"""Transformation source technologies availables"""
+enum TransformationSource {
+  """Description originating from coalesce"""
+  COALESCE
+
+  """Description originating from dbt"""
+  DBT
+}
+
+"""Lineage link between your assets"""
+type Lineage {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+
+  """The type of the lineage"""
+  lineageType: LineageType
+
+  """The id of the child dashboard if it is a dashboard lineage"""
+  childDashboardId: String
+
+  """The id of the child table if it is a table lineage"""
+  childTableId: String
+
+  """The id of the parent dashboard if it is a dashboard lineage"""
+  parentDashboardId: String
+
+  """The id of the parent table if it is a table lineage"""
+  parentTableId: String
+
+  """Date and time the resource was created"""
+  createdAt: Timestamp
+
+  """The last date on which this lineage was recomputed"""
+  refreshedAt: Timestamp
+}
+
+"""The type of the lineage"""
+enum LineageType {
+  """Detected automatically by Catalog"""
+  AUTOMATIC
+
+  """Created via the public API"""
+  MANUAL_CUSTOMER
+
+  """Created by the Catalog operations team"""
+  MANUAL_OPS
+
+  """Imported from other technologies"""
+  OTHER_TECHNOS
+}
+
+type EntitiesLink {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+
+  """The dashboard id the link is issued from"""
+  fromDashboardId: String
+
+  """The dashboard the link is issued from"""
+  fromDashboard: Dashboard
+
+  """The table id the link is issued from"""
+  fromTableId: String
+
+  """The table the link is issued from"""
+  fromTable: Table
+
+  """The knowledge page id the link is issued from"""
+  fromTermId: String
+
+  """The knowledge page the link is issued from"""
+  fromTerm: Term
+
+  """The dashboard id the link points to"""
+  toDashboardId: String
+
+  """The dashboard the link points to"""
+  toDashboard: Dashboard
+
+  """The dashboard field id the link points to"""
+  toDashboardFieldId: String
+
+  """The dashboard field the link points to"""
+  toDashboardField: DashboardField
+
+  """The table id the link points to"""
+  toTableId: String
+
+  """The table the link points to"""
+  toTable: Table
+
+  """The knowledge page id the link points to"""
+  toTermId: String
+
+  """The knowledge page the link points to"""
+  toTerm: Term
+
+  """The column id the link points to"""
+  toColumnId: String
+
+  """The column the link points to"""
+  toColumn: Column
+
+  """Date and time the resource was created"""
+  createdAt: Timestamp!
+
+  """Date and time the resource was last updated"""
+  updatedAt: Timestamp!
+}
+
+"""Also known as Knowledge page, a Term is used to document your data."""
+type Term {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+
+  """The Catalog documentation for this term, as raw text"""
+  descriptionRaw: String
+
+  """
+  Catalog description in Lexical format (see https://lexical.dev/ documentation)
+  """
+  descriptionStateLexical: JSON
+
+  """The term depth - Default 0 is highest in hierarchy"""
+  depthLevel: Int
+
+  """The documentation from the external source for this term"""
+  externalDescription: String
+
+  """The source of the documentation for this term"""
+  externalDescriptionSource: TermExternalDescriptionSource
+
+  """External ID of the term when synchronized from a source"""
+  externalId: String
+
+  """The icon associated to the term"""
+  icon: String
+
+  """True if the description has been generated, false otherwise"""
+  isDescriptionGenerated: Boolean
+
+  """The term name"""
+  name: String
+  slug: String!
+
+  """The term's url in the external source"""
+  url: String
+
+  """The individual owners of the term"""
+  ownerEntities: [OwnerEntity!]!
+
+  """The team owners of the term"""
+  teamOwnerEntities: [TeamOwnerEntity!]!
+
+  """The children terms of this term"""
+  childrenTerms: [Term!]!
+
+  """The term was deprecated by the user belonging to this ID"""
+  deprecatedByUserId: String
+
+  """The entity editors this term points to"""
+  entityEditors: [EntityEditor!]!
+
+  """The term was last described be the user belonging to this ID"""
+  lastDescribedByUserId: String
+
+  """The term was last described by this user"""
+  lastDescribedBy: User
+
+  """The tag to which this term is linked"""
+  linkedTag: Tag
+
+  """The id of the parent term of this term"""
+  parentTermId: String
+
+  """The parent term of this term"""
+  parentTerm: Term
+
+  """The tag entities belonging to this term"""
+  tagEntities: [TagEntity!]!
+
+  """The term is verified by the user belonging to this ID"""
+  verifiedByUserId: String
+
+  """The term is verified by this user"""
+  verifiedBy: User
+
+  """Date and time the resource was created"""
+  createdAt: Timestamp!
+
+  """Date and time the resource was deleted"""
+  deletedAt: Timestamp
+
+  """The time at which the term was deprecated"""
+  deprecatedAt: Timestamp
+
+  """The time at which the term was last edited"""
+  lastEditedAt: Timestamp
+
+  """Date and time the resource was last updated"""
+  updatedAt: Timestamp!
+
+  """The time at which the term was verified"""
+  verifiedAt: Timestamp
+
+  """The term's raw description or the external one if empty"""
+  description: String!
+
+  """Whether this term has been marked as deprecated"""
+  isDeprecated: Boolean!
+
+  """Is the term verified?"""
+  isVerified: Boolean!
+}
+
+"""Term available external documentation sources"""
+enum TermExternalDescriptionSource {
+  """Description generated by Catalog"""
+  CASTOR
+
+  """Description originating from a customer knowledge base"""
+  KNOWLEDGE
+}
+
+"""
+Represents a user who is designated as the owner of a dashboard, table, or term.
+"""
+type OwnerEntity {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+  dashboardId: String
+  ownerLabelId: String
+
+  """The owner label"""
+  ownerLabel: OwnerLabel
+  tableId: String
+  termId: String
+
+  """The unified user linked to the owner"""
+  unifiedUser: UnifiedUser!
+  userId: String
+
+  """The owner"""
+  user: User
+  createdAt: Timestamp!
+  updatedAt: Timestamp!
+}
+
+type OwnerLabel {
+  id: ID!
+
+  """The owner label"""
+  label: String!
+}
+
+"""
+A team owner entity represents a team that owns an entity (dashboard, table, knowledge).
+"""
+type TeamOwnerEntity {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+  ownerLabelId: String
+
+  """The owner label"""
+  ownerLabel: OwnerLabel
+
+  """the owning team id"""
+  teamId: String!
+
+  """The owning team"""
+  team: Team!
+
+  """Date and time the resource was created"""
+  createdAt: Timestamp!
+
+  """Date and time the resource was last updated"""
+  updatedAt: Timestamp!
+}
+
+"""A team represents a group of users."""
+type Team {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+
+  """The avatar url of the team"""
+  avatarUrl: String
+
+  """The description of the team"""
+  description: String
+
+  """The email of the team"""
+  email: String
+
+  """external id of the team when synchronized from an external source"""
+  externalId: String
+
+  """The name of the team"""
+  name: String!
+
+  """The slack channel of the team (start with #)"""
+  slackChannel: String
+
+  """The slack group of the team (start with @)"""
+  slackGroup: String
+
+  """Indicate where the team come from: HR tool, Slack, Google groups..."""
+  source: String
+
+  """The entities owned by the team"""
+  teamOwnerEntities: [TeamOwnerEntity!]!
+
+  """Date and time the resource was created"""
+  createdAt: Timestamp!
+
+  """Date and time the resource was last updated"""
+  updatedAt: Timestamp!
+}
+
+"""
+A database represents a collection of tables and views, providing insights into data. Each database contains metadata, documentation, and links to its source and related entities.
+"""
+type Database {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+
+  """The Catalog documentation for this database"""
+  description: String
+
+  """
+  The technical database identifier from the warehouse database structure
+  """
+  externalId: String!
+
+  """Whether this database is hidden"""
+  isHidden: Boolean!
+
+  """
+  The technical database identifier from the warehouse database structure
+  """
+  name: String!
+
+  """Unique Catalog slug of the resource"""
+  slug: String!
+
+  """The source (warehouse) ID of the database"""
+  sourceId: String!
+
+  """The warehouse of the database"""
+  warehouse: Source!
+
+  """Date and time the resource was created"""
+  createdAt: Timestamp!
+
+  """Date and time the resource was deleted"""
+  deletedAt: Timestamp
+
+  """Date and time the resource was last updated"""
+  updatedAt: Timestamp!
+}
+
+"""A schema represents a collection of tables and views."""
+type Schema {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+
+  """The Catalog documentation for this schema"""
+  description: String
+
+  """The technical schema identifier from the warehouse schema structure"""
+  externalId: String!
+
+  """Whether this schema is hidden"""
+  isHidden: Boolean!
+
+  """The name of the schema"""
+  name: String!
+
+  """Unique Catalog slug of the resource"""
+  slug: String!
+
+  """The database ID of the schema"""
+  databaseId: String!
+
+  """The database linked to this schema"""
+  database: Database!
+
+  """Date and time the resource was created"""
+  createdAt: Timestamp!
+
+  """Date and time the resource was deleted"""
+  deletedAt: Timestamp
+
+  """Date and time the resource was last updated"""
+  updatedAt: Timestamp!
+}
+
+"""
+A source represents a data source that can be used to create dashboards, tables, and knowledge. Each source contains metadata, documentation, and links to its related entities.
+"""
+type Source {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+
+  """The name of the source"""
+  name: String!
+
+  """Whether the source is issued from the API or the extraction"""
+  origin: SourceOrigin!
+
+  """Unique Catalog slug of the resource"""
+  slug: String!
+
+  """The technology of the source"""
+  technology: SourceTechnology!
+
+  """Type of the source"""
+  type: SourceType!
+
+  """Date and time the resource was created"""
+  createdAt: Timestamp!
+
+  """Date and time the resource was deleted"""
+  deletedAt: Timestamp
+
+  """The time at which the source was last ingested by service"""
+  lastRefreshedAt: Timestamp
+
+  """Date and time the resource was last updated"""
+  updatedAt: Timestamp!
+}
+
+"""The source origin"""
+enum SourceOrigin {
+  """Data pushed via the public API"""
+  API
+
+  """Data originating from a customer data source"""
+  EXTRACTION
+}
+
+enum SourceTechnology {
+  MS_TEAMS
+  SLACK
+  CONFLUENCE
+  NOTION
+  ANOMALO
+  COALESCE_QUALITY
+  DBT_TEST
+  GREAT_EXPECTATIONS
+  MONTE_CARLO
+  SIFFLET
+  SODA
+  COALESCE
+  DBT
+  COGNOS
+  DOMO
+  GENERIC_VISUALIZATION
+  LOOKER
+  LOOKER_STUDIO
+  METABASE
+  MIXPANEL
+  MODE
+  PERISCOPE
+  POWERBI
+  QLIK_SENSE
+  REDASH
+  SALESFORCE_REPORTING
+  SIGMA
+  SISENSE
+  SSRS
+  STRATEGY
+  SUPERSET
+  TABLEAU
+  THOUGHTSPOT
+  ZOHO
+  AMAZON_ATHENA
+  BIGQUERY
+  DATABRICKS
+  DELTALAKE
+  DOMO_DATA
+  DREMIO
+  DRUID
+  DYNAMODB
+  EXASOL
+  FIREBOLT
+  FIVETRAN
+  GENERIC_WAREHOUSE
+  GLUE
+  HIVE
+  KAFKA
+  KEBOOLA
+  MARIADB
+  MYSQL
+  ORACLE
+  POSTGRES
+  PRESTODB
+  REDSHIFT
+  SALESFORCE
+  SNAPLOGIC
+  SNOWFLAKE
+  SQLSERVER
+  SYNAPSE
+  S3
+  TERADATA
+  TRINO
+  VERTICA
+}
+
+"""type of source"""
+enum SourceType {
+  """Source for communication and messaging systems"""
+  COMMUNICATION
+
+  """Source for knowledge management and documentation"""
+  KNOWLEDGE
+
+  """Source for data quality and validation"""
+  QUALITY
+
+  """Source for data transformation and processing"""
+  TRANSFORMATION
+
+  """Source for data visualization and reporting"""
+  VISUALIZATION
+
+  """Source for data warehouse and storage"""
+  WAREHOUSE
+}
+
+"""
+Represents a user imported from an external data source, including their name, email, etc.
+"""
+type SourceUser {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+  avatarUrl: String
+
+  """The optional email for this source query"""
+  email: String
+
+  """The internal reference to this user in the source"""
+  externalId: String!
+  name: String
+
+  """The source user belongs to this source ID."""
+  sourceId: String!
+
+  """The precomputed unifiedId"""
+  unifiedId: String
+
+  """The unified user associated to that source user."""
+  unifiedUser: UnifiedUser
+  createdAt: Timestamp!
+  deletedAt: Timestamp
+  updatedAt: Timestamp!
+}
+
+"""
+Represents a user who is designated as an editor for a specific entity (dashboard, table, or knowledge).
+"""
+type EntityEditor {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+  dashboardId: String
+
+  """ID of the user editor for this entity"""
+  sourceUserId: String!
+
+  """Associated sourceUser"""
+  sourceUser: SourceUser!
+  tableId: String
+  termId: String
+  createdAt: Timestamp!
+  updatedAt: Timestamp!
+}
+
+"""The type of the query action"""
+enum QueryType {
+  """Read-only query that retrieves data"""
+  SELECT
+
+  """Query that modifies or writes data"""
+  WRITE
+}
+
+"""
+A unified user represents a user that is associated with a Catalog user and a source user. It is used to manage the user across the different systems.
+"""
+type UnifiedUser {
+  """Unique Catalog identifier of the resource"""
+  id: String!
+  avatarUrl: String
+
+  """The email of the unified user"""
+  email: String!
+
+  """The name of the unified user"""
+  name: String
+
+  """The role of the unified user in the account"""
+  role: UserRole
+  status: UserStatus
+
+  """List of team id where the unified user is present"""
+  teamIds: [String!]!
+
+  """The unified user is associated to this Catalog user ID"""
+  userId: String
+  createdAt: Timestamp
+}
+
+"""
+A dashboard field represents a single field within a dashboard. Each dashboard field is linked to a dashboard and contains metadata such as data type, description, and technical identifier.
+"""
+type DashboardField {
+  id: ID!
+  slug: String!
+
+  """The technical identifier within the source"""
+  externalId: String!
+
+  """The data type for the dashboard field"""
+  dataType: String!
+
+  """The Catalog documentation for this column"""
+  description: String
+
+  """True if this field is a primary key"""
+  isPrimaryKey: Boolean
+
+  """The dashboard field label"""
+  label: String!
+
+  """The dashboard field name"""
+  name: String!
+
+  """Field popularity"""
+  popularity: Int
+
+  """Name of the view used for display"""
+  viewLabel: String
+
+  """Technical name of the view"""
+  viewName: String
+  dashboardId: String!
+
+  """The field belongs to this dashboard"""
+  dashboard: Dashboard!
+  createdAt: Timestamp!
+  deletedAt: Timestamp
+  updatedAt: Timestamp!
+}
+
+"""Field lineage link between your assets"""
+type FieldLineage {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+
+  """The type of the lineage"""
+  lineageType: LineageType
+
+  """The id of the child column if it is a column lineage"""
+  childColumnId: String
+
+  """The id of the child dashboard if it is a dashboard lineage"""
+  childDashboardId: String
+
+  """The id of the child dashboard field if it is a dashboard field lineage"""
+  childDashboardFieldId: String
+
+  """The id of the parent column if it is a column lineage"""
+  parentColumnId: String
+
+  """
+  The id of the parent dashboard field if it is a dashboard field lineage
+  """
+  parentDashboardFieldId: String
+
+  """Date and time the resource was created"""
+  createdAt: Timestamp
+
+  """The last date on which this field lineage was recomputed"""
+  refreshedAt: Timestamp
+}
+
+"""
+A tag entity represents a tag applied to an entity (dashboard, table, column, etc.)
+"""
+type TagEntity {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+
+  """Author of a tag entity"""
+  origin: TagEntityOrigin!
+
+  """
+  The source technology that brought the tag (for EXTERNAL tag entities only)
+  """
+  technology: SourceTechnology
+  tagId: String!
+
+  """The tag concerned"""
+  tag: Tag!
+  createdAt: Timestamp!
+  updatedAt: Timestamp!
+}
+
+"""The possible author of a tag entity"""
+enum TagEntityOrigin {
+  """Tag originating for a customer source"""
+  EXTERNAL
+
+  """Tag created by Catalog"""
+  INTERNAL
+
+  """Tag created by a user"""
+  USER
+}
+
+"""
+A tag represents a label applied to entities (dashboards, tables, columns, etc.) to categorize and organize them.
+"""
+type Tag {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+
+  """The color given to the tag"""
+  color: Colors
+
+  """The label given to the tag"""
+  label: String!
+
+  """The ID of the term linked to tag"""
+  linkedTermId: String
+
+  """Unique Catalog slug of the resource"""
+  slug: String!
+  createdAt: Timestamp!
+  updatedAt: Timestamp!
+}
+
+"""Available colors for tag"""
+enum Colors {
+  ALERT_COLOR
+  AQUA_BLUE
+  BLUE_RED
+  CERULEAN_BLUE
+  CHARTREUSE
+  MAGENTA
+  ORANGE_RED
+  ORANGE_YELLOW
+  RED_VIOLET
+  SPRING_GREEN
+  VIOLET
+}
+
+"""The type of entity as the target for an EntityLink"""
+enum EntitiesLinkTargetType {
+  """Column entity"""
+  COLUMN
+
+  """Dashboard entity"""
+  DASHBOARD
+  DASHBOARD_FIELD
+
+  """Table entity"""
+  TABLE
+
+  """Knowledge entity"""
+  TERM
+}
+
+"""
+The javascript `Date` as string. Type represents date and time as the ISO Date string.
+"""
+scalar DateTime
+
+"""
+An external link for a table represents a URL to an external system such as github
+"""
+type ExternalLink {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+
+  """The external link url"""
+  url: String!
+
+  """The origin of the url"""
+  technology: ExternalLinkTechnology!
+
+  """The link belongs to this data table ID"""
+  tableId: String!
+}
+
+"""The possible external link technologies"""
+enum ExternalLinkTechnology {
+  """Apache Airflow workflow management platform"""
+  AIRFLOW
+
+  """GitHub version control and collaboration platform"""
+  GITHUB
+
+  """GitLab version control and DevOps platform"""
+  GITLAB
+
+  """Other external link type"""
+  OTHER
+}
+
+"""Represents a quality test for a table"""
+type QualityCheck {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+
+  """Quality check description"""
+  description: String
+
+  """The technical quality check identifier"""
+  externalId: String!
+
+  """Quality check name"""
+  name: String!
+
+  """Email of the owner of the quality check"""
+  ownerEmail: String
+
+  """
+  Result is different from the status, it can contain information on why the test failed
+  """
+  result: String
+
+  """Time at which the quality check ran"""
+  runAt: Timestamp!
+
+  """Source that ran the quality check"""
+  source: String!
+
+  """Status of the quality check"""
+  status: QualityStatus!
+
+  """Url of the quality check"""
+  url: String
+
+  """Column id linked to the quality check."""
+  columnId: String
+
+  """Column linked to the quality check."""
+  column: Column
+
+  """Table id linked to the quality check."""
+  tableId: String!
+
+  """Table linked to the quality check."""
+  table: Table!
+
+  """Date and time the resource was created"""
+  createdAt: Timestamp!
+}
+
+"""The status of quality check"""
+enum QualityStatus {
+  """Critical quality issue detected"""
+  ALERT
+
+  """Non-critical quality issue detected"""
+  WARNING
+
+  """Quality check passed successfully"""
+  SUCCESS
+}
+
+"""The scope of the action"""
+enum EntityTargetType {
+  """Dashboard entity"""
+  DASHBOARD
+
+  """Table entity"""
+  TABLE
+
+  """Knowledge entity"""
+  TERM
+}
+
+"""Pagination options for the result"""
+input Pagination {
+  """Number of entities to return per page"""
+  nbPerPage: Int!
+
+  """Fetch entities at this page, start at page 0"""
+  page: Int
+}
+
+"""Sorting options for results"""
+input ColumnSorting {
+  """The direction to sort the results: by `ASC` or `DESC`"""
+  direction: SortingDirectionEnum = ASC
+
+  """The position of null values in the results: `FIRST` or `LAST`"""
+  nullsPriority: SortingNullsPriority = LAST
+
+  """Available attributes to sort the results by"""
+  sortingKey: ColumnSortingKey!
+}
+
+"""The possible sort directions : ASC/DESC, default: asc"""
+enum SortingDirectionEnum {
+  """Sort in ascending order"""
+  ASC
+
+  """Sort in descending order"""
+  DESC
+}
+
+"""The position of the nulls first/last, default: last"""
+enum SortingNullsPriority {
+  """Place null values at the beginning of sorted results"""
+  FIRST
+
+  """Place null values at the end of sorted results"""
+  LAST
+}
+
+"""The possible sort fields"""
+enum ColumnSortingKey {
+  name
+  sourceOrder
+  tableName
+  tablePopularity
+}
+
+"""
+Allow to refine selection of the results using multiple scopes. Note: all scopes are additive
+"""
+input GetColumnsScope {
+  """Scope by column name"""
+  name: String
+
+  """Scope by a substring of the column name"""
+  nameContains: String
+
+  """Scope by description"""
+  description: String
+
+  """Scope by database"""
+  databaseId: String
+
+  """Scope by database IDs"""
+  databaseIds: [String!]
+
+  """Scope by ids"""
+  ids: [String!]
+
+  """Scope by hasColumnJoins"""
+  hasColumnJoins: Boolean
+
+  """
+  Scope by documentation status (either documented in the Catalog or an external source)
+  """
+  isDocumented: Boolean
+
+  """Scope by isPii (personally identifiable information)"""
+  isPii: Boolean
+
+  """Scope by isPrimaryKey"""
+  isPrimaryKey: Boolean
+
+  """Scope by schema ID"""
+  schemaId: String
+
+  """Scope by schema IDs"""
+  schemaIds: [String!]
+
+  """Scope by source ID"""
+  sourceId: String
+
+  """Scope by source IDs"""
+  sourceIds: [String!]
+
+  """Scope by table ID"""
+  tableId: String
+
+  """Scope by table IDs"""
+  tableIds: [String!]
+
+  """Scope by withDeleted, whether to include deleted assets"""
+  withDeleted: Boolean = false
+
+  """Scope by withHidden, whether to include hidden assets"""
+  withHidden: Boolean = false
+}
+
+"""Paginated response from the executed query or mutation"""
+type GetColumnJoinsOutput {
+  """Number of entities to return per page"""
+  nbPerPage: Int!
+
+  """The page number (start at 0)"""
+  page: Int
+
+  """The total number of entities"""
+  totalCount: Int!
+
+  """Field containing the response from the executed query or mutation"""
+  data: [ColumnJoin!]!
+}
+
+"""
+Represents a join relationship between two columns, including the number of times the join occurs. Each ColumnJoin links two columns and provides metadata about their association.
+"""
+type ColumnJoin {
+  """Unique Catalog identifier of the resource"""
+  id: ID!
+
+  """The number of join linking the columns"""
+  count: Int!
+
+  """The first column id on which the join happens"""
+  firstColumnId: String!
+
+  """The first column on which the join happens"""
+  firstColumn: Column!
+
+  """The second column id on which the join happens"""
+  secondColumnId: String!
+
+  """The second column on which the join happens"""
+  secondColumn: Column!
+
+  """Date and time the resource was created"""
+  createdAt: Timestamp!
+
+  """Date and time the resource was last updated"""
+  updatedAt: Timestamp!
+}
+
+"""Sorting options for results"""
+input ColumnJoinSorting {
+  """The direction to sort the results: by `ASC` or `DESC`"""
+  direction: SortingDirectionEnum = ASC
+
+  """The position of null values in the results: `FIRST` or `LAST`"""
+  nullsPriority: SortingNullsPriority = LAST
+
+  """Available attributes to sort the results by"""
+  sortingKey: ColumnJoinSortingKey!
+}
+
+"""The possible sort fields"""
+enum ColumnJoinSortingKey {
+  """Sort by the number of join occurrences"""
+  count
+}
+
+"""
+Allow to refine selection of the results using multiple scopes. Note: all scopes are additive
+"""
+input GetColumnJoinsScope {
+  """Filter upon first and second column ids"""
+  columnIds: [String!]
+
+  """Filter upon column join ids"""
+  ids: [String!]
+
+  """Filter upon table ids"""
+  tableIds: [String!]
+
+  """Scope by withDeleted, whether to include deleted assets"""
+  withDeleted: Boolean = false
+
+  """Scope by withHidden, whether to include hidden assets"""
+  withHidden: Boolean = false
+}
+
+"""Paginated response from the executed query or mutation"""
+type GetDashboardsOutput {
+  """Number of entities to return per page"""
+  nbPerPage: Int!
+
+  """The page number (start at 0)"""
+  page: Int
+
+  """The total number of entities"""
+  totalCount: Int!
+
+  """Field containing the response from the executed query or mutation"""
+  data: [Dashboard!]!
+}
+
+"""Sorting options for results"""
+input DashboardSorting {
+  """The direction to sort the results: by `ASC` or `DESC`"""
+  direction: SortingDirectionEnum = ASC
+
+  """The position of null values in the results: `FIRST` or `LAST`"""
+  nullsPriority: SortingNullsPriority = LAST
+
+  """Available attributes to sort the results by"""
+  sortingKey: DashboardSortingKey!
+}
+
+"""The possible sort fields"""
+enum DashboardSortingKey {
+  """Sort by the dashboard name"""
+  name
+
+  """Sort by the number of owners and team owners"""
+  ownersAndTeamOwnersCount
+
+  """Sort by the dashboard popularity"""
+  popularity
+}
+
+"""
+Allow to refine selection of the results using multiple scopes. Note: all scopes are additive
+"""
+input GetDashboardsScope {
+  """Scope by the dashboard folder path, start from the root folder"""
+  folderPath: String
+
+  """Scope by multiple dashboard IDs"""
+  ids: [String!]
+
+  """Scope by a substring of the dashboard name, case insensitive"""
+  nameContains: String
+
+  """Scope by source ID"""
+  sourceId: String
+
+  """Scope by withDeleted, whether to include deleted assets"""
+  withDeleted: Boolean = false
+}
+
+"""Paginated response from the executed query or mutation"""
+type GetDatabasesOutput {
+  """Number of entities to return per page"""
+  nbPerPage: Int!
+
+  """The page number (start at 0)"""
+  page: Int
+
+  """The total number of entities"""
+  totalCount: Int!
+
+  """Field containing the response from the executed query or mutation"""
+  data: [Database!]!
+}
+
+"""
+Allow to refine selection of the results using multiple scopes. Note: all scopes are additive
+"""
+input GetDatabasesScope {
+  """Scope by a substring of the field name"""
+  nameContains: String
+
+  """Scope by a list of source ids"""
+  sourceIds: [String!]
+
+  """Scope by withDeleted, whether to include deleted assets"""
+  withDeleted: Boolean = false
+
+  """Scope by withHidden, whether to include hidden assets"""
+  withHidden: Boolean = false
+}
+
+"""Paginated response from the executed query or mutation"""
+type GetDataProductOutput {
+  """Number of entities to return per page"""
+  nbPerPage: Int!
+
+  """The page number (start at 0)"""
+  page: Int
+
+  """The total number of entities"""
+  totalCount: Int!
+
+  """Field containing the response from the executed query or mutation"""
+  data: [DataProduct!]!
+}
+
+"""Sorting options for results"""
+input DataProductSorting {
+  """The direction to sort the results: by `ASC` or `DESC`"""
+  direction: SortingDirectionEnum = ASC
+
+  """The position of null values in the results: `FIRST` or `LAST`"""
+  nullsPriority: SortingNullsPriority = LAST
+
+  """Available attributes to sort the results by"""
+  sortingKey: DataProductSortingKey!
+}
+
+"""The possible sort fields for Data Products"""
+enum DataProductSortingKey {
+  """Sort by the table name"""
+  tableName
+
+  """Sort by the dashboard name"""
+  dashboardName
+
+  """Sort by the term name"""
+  termName
+}
+
+"""
+Allow to refine selection of the results using multiple scopes. Note: all scopes are additive
+"""
+input GetDataProductScope {
+  """Scope by tag or domainid"""
+  withTagId: String
+
+  """The type of the entities"""
+  entityType: EntityTargetType
+}
+
+"""Paginated response from the executed query or mutation"""
+type GetEntitiesLinkOutput {
+  """Number of entities to return per page"""
+  nbPerPage: Int!
+
+  """The page number (start at 0)"""
+  page: Int
+
+  """The total number of entities"""
+  totalCount: Int!
+
+  """Field containing the response from the executed query or mutation"""
+  data: [EntitiesLink!]!
+}
+
+"""Sorting options for results"""
+input EntitiesLinkSorting {
+  """The direction to sort the results: by `ASC` or `DESC`"""
+  direction: SortingDirectionEnum = ASC
+
+  """The position of null values in the results: `FIRST` or `LAST`"""
+  nullsPriority: SortingNullsPriority = LAST
+
+  """Available attributes to sort the results by"""
+  sortingKey: EntitiesLinkSortingKey!
+}
+
+"""Entities links possible sort fields"""
+enum EntitiesLinkSortingKey {
+  """Sort by the entities link creation date"""
+  createdAt
+}
+
+input GetEntitiesLinksScope {
+  """Scope by dashboard the entities link is issued from"""
+  fromDashboardId: String
+
+  """Scope by table the entities link is issued from"""
+  fromTableId: String
+
+  """Scope by term the entities link is issued from"""
+  fromTermId: String
+
+  """Scope by multiple term IDs from which the entity links are issued"""
+  fromTermIds: [String!]
+
+  """Scope by the parent table of columns pointed to by the entities"""
+  toColumnsOfTableId: String
+
+  """Scope by dashboard the entities link points to"""
+  toDashboardId: String
+
+  """Scope by dashboard field the entities link points to"""
+  toDashboardFieldId: String
+
+  """Scope by the parent dashboard of fields pointed to by the entities"""
+  toFieldsOfDashboardId: String
+
+  """Scope by table the entities link points to"""
+  toTableId: String
+
+  """Scope by term the entities link points to"""
+  toTermId: String
+}
+
+"""Paginated response from the executed query or mutation"""
+type GetFieldLineagesOutput {
+  """Number of entities to return per page"""
+  nbPerPage: Int!
+
+  """The page number (start at 0)"""
+  page: Int
+
+  """The total number of entities"""
+  totalCount: Int!
+
+  """Field containing the response from the executed query or mutation"""
+  data: [FieldLineage!]!
+}
+
+"""Sorting options for results"""
+input FieldLineageSorting {
+  """The direction to sort the results: by `ASC` or `DESC`"""
+  direction: SortingDirectionEnum = ASC
+
+  """The position of null values in the results: `FIRST` or `LAST`"""
+  nullsPriority: SortingNullsPriority = LAST
+
+  """Available attributes to sort the results by"""
+  sortingKey: FieldLineageSortingKey!
+}
+
+"""The possible sort fields for field lineages"""
+enum FieldLineageSortingKey {
+  """Sort by the child dashboard popularity"""
+  childDashboardPopularity
+
+  """Sort by the field lineage id"""
+  id
+
+  """Sort by the field lineage popularity"""
+  popularity
+
+  """Sort by the field lineage type"""
+  type
+}
+
+"""
+Allow to refine selection of the results using multiple scopes. Note: all scopes are additive
+"""
+input GetFieldLineagesScope {
+  """Scope by child column"""
+  childColumnId: String
+
+  """Scope by child dashboard field"""
+  childDashboardFieldId: String
+
+  """Scope by child dashboard field source"""
+  childDashboardFieldSourceId: String
+
+  """Scope by child dashboard source"""
+  childDashboardSourceId: String
+
+  """Scope by column source (PARENT / CHILD)"""
+  columnSourceId: String
+
+  """Scope on lineages with a dashboard child"""
+  hasDashboardChild: Boolean
+
+  """Scope on lineages type"""
+  lineageType: LineageType
+
+  """Scope by parent column"""
+  parentColumnId: String
+
+  """Scope by parent dashboard field"""
+  parentDashboardFieldId: String
+
+  """Scope to filter on child asset type"""
+  withChildAssetType: LineageAssetType
+}
+
+"""The asset type for the lineage"""
+enum LineageAssetType {
+  COLUMN
+  DASHBOARD
+  DASHBOARD_FIELD
+  TABLE
+}
+
+"""Paginated response from the executed query or mutation"""
+type GetLineagesOutput {
+  """Number of entities to return per page"""
+  nbPerPage: Int!
+
+  """The page number (start at 0)"""
+  page: Int
+
+  """The total number of entities"""
+  totalCount: Int!
+
+  """Field containing the response from the executed query or mutation"""
+  data: [Lineage!]!
+}
+
+"""Sorting options for results"""
+input LineageSorting {
+  """The direction to sort the results: by `ASC` or `DESC`"""
+  direction: SortingDirectionEnum = ASC
+
+  """The position of null values in the results: `FIRST` or `LAST`"""
+  nullsPriority: SortingNullsPriority = LAST
+
+  """Available attributes to sort the results by"""
+  sortingKey: LineageSortingKey!
+}
+
+"""The possible sort fields for lineages"""
+enum LineageSortingKey {
+  """Sort by the lineage id"""
+  id
+
+  """
+  Sort by the lineage popularity (based on the parent and child assets popularity)
+  """
+  popularity
+
+  """Sort by the lineage type"""
+  type
+}
+
+"""
+Allow to refine selection of the results using multiple scopes. Note: all scopes are additive
+"""
+input GetLineagesScope {
+  """Scope by child dashboard ID"""
+  childDashboardId: String
+
+  """Scope by child source ID"""
+  childSourceId: String
+
+  """Scope by child table ID"""
+  childTableId: String
+
+  """Scope by multiple lineage IDs"""
+  lineageIds: [String!]
+
+  """Scope by lineage type"""
+  lineageType: LineageType
+
+  """Scope by parent dashboard ID"""
+  parentDashboardId: String
+
+  """Scope by parent source ID"""
+  parentSourceId: String
+
+  """Scope by parent table ID"""
+  parentTableId: String
+
+  """Scope by the type of the child asset"""
+  withChildAssetType: LineageAssetType
+
+  """Scope by withDeleted, whether to include deleted assets"""
+  withDeleted: Boolean = false
+
+  """Scope by withHidden, whether to include hidden assets"""
+  withHidden: Boolean = false
+}
+
+"""Paginated response from the executed query or mutation"""
+type GetQualityChecksOutput {
+  """Number of entities to return per page"""
+  nbPerPage: Int!
+
+  """The page number (start at 0)"""
+  page: Int
+
+  """The total number of entities"""
+  totalCount: Int!
+
+  """Field containing the response from the executed query or mutation"""
+  data: [QualityCheck!]!
+}
+
+"""
+Allow to refine selection of the results using multiple scopes. Note: all scopes are additive
+"""
+input GetQualityChecksScope {
+  """Scope by table ID"""
+  tableId: String
+
+  """Scope by withDeleted, whether to include deleted assets"""
+  withDeleted: Boolean = false
+}
+
+"""Paginated response from the executed query or mutation"""
+type GetSchemasOutput {
+  """Number of entities to return per page"""
+  nbPerPage: Int!
+
+  """The page number (start at 0)"""
+  page: Int
+
+  """The total number of entities"""
+  totalCount: Int!
+
+  """Field containing the response from the executed query or mutation"""
+  data: [Schema!]!
+}
+
+"""
+Allow to refine selection of the results using multiple scopes. Note: all scopes are additive
+"""
+input GetSchemasScope {
+  """Scope by a list of database ids"""
+  databaseIds: [String!]
+
+  """Scope by a substring of the field name"""
+  nameContains: String
+
+  """Scope by a list of source ids"""
+  sourceIds: [String!]
+
+  """Scope by withDeleted, whether to include deleted assets"""
+  withDeleted: Boolean = false
+
+  """Scope by withHidden, whether to include hidden assets"""
+  withHidden: Boolean = false
+}
+
+"""Paginated response from the executed query or mutation"""
+type GetSourcesOutput {
+  """Number of entities to return per page"""
+  nbPerPage: Int!
+
+  """The page number (start at 0)"""
+  page: Int
+
+  """The total number of entities"""
+  totalCount: Int!
+
+  """Field containing the response from the executed query or mutation"""
+  data: [Source!]!
+}
+
+"""
+Allow to refine selection of the results using multiple scopes. Note: all scopes are additive
+"""
+input GetSourcesScope {
+  """Scope by a substring of the source name"""
+  nameContains: String
+
+  """Scope by source origin"""
+  origin: SourceOrigin
+
+  """Scope by source technology"""
+  technology: SourceTechnology
+
+  """Scope by source type"""
+  type: SourceType
+
+  """Scope by withDeleted, whether to include deleted assets"""
+  withDeleted: Boolean = false
+}
+
+"""Paginated response from the executed query or mutation"""
+type GetTablesOutput {
+  """Number of entities to return per page"""
+  nbPerPage: Int!
+
+  """The page number (start at 0)"""
+  page: Int
+
+  """The total number of entities"""
+  totalCount: Int!
+
+  """Field containing the response from the executed query or mutation"""
+  data: [Table!]!
+}
+
+"""Sorting options for results"""
+input TableSorting {
+  """The direction to sort the results: by `ASC` or `DESC`"""
+  direction: SortingDirectionEnum = ASC
+
+  """The position of null values in the results: `FIRST` or `LAST`"""
+  nullsPriority: SortingNullsPriority = LAST
+
+  """Available attributes to sort the results by"""
+  sortingKey: TableSortingKey!
+}
+
+"""The possible sort fields"""
+enum TableSortingKey {
+  """Sort by the level of completion"""
+  levelOfCompletion
+
+  """Sort by the table name"""
+  name
+
+  """Sort by the table name length"""
+  nameLength
+
+  """Sort by the number of owners and team owners"""
+  ownersAndTeamOwnersCount
+
+  """Sort by the table popularity"""
+  popularity
+
+  """Sort by the schema name"""
+  schemaName
+}
+
+"""
+Allow to refine selection of the results using multiple scopes. Note: all scopes are additive
+"""
+input GetTablesScope {
+  """Scope by database ID"""
+  databaseId: String
+
+  """Scope by multiple table IDs"""
+  ids: [String!]
+
+  """Scope by a substring of the table name, case insensitive"""
+  nameContains: String
+
+  """Scope by a substring of the table path, case insensitive"""
+  pathContains: String
+
+  """Scope by schema ID"""
+  schemaId: String
+
+  """Scope by warehouse ID"""
+  warehouseId: String
+
+  """Scope by withDeleted, whether to include deleted assets"""
+  withDeleted: Boolean = false
+
+  """Scope by withHidden, whether to include hidden assets"""
+  withHidden: Boolean = false
+}
+
+"""Paginated response from the executed query or mutation"""
+type GetTableQueriesOutput {
+  """Number of entities to return per page"""
+  nbPerPage: Int!
+
+  """The page number (start at 0)"""
+  page: Int
+
+  """The total number of entities"""
+  totalCount: Int!
+
+  """Field containing the response from the executed query or mutation"""
+  data: [TableQueryOutput!]!
+}
+
+"""A SQL query being run on the warehouse either to READ or WRITE data"""
+type TableQueryOutput {
+  """The query's author"""
+  author: String
+
+  """The database ids"""
+  databaseIds: [String!]!
+
+  """The query identifier"""
+  hash: ID!
+
+  """The query's visibility"""
+  isHidden: Boolean!
+
+  """The query's content"""
+  query: String!
+
+  """The query duration (in seconds)"""
+  queriesDuration: Float
+
+  """The query's type"""
+  queryType: QueryType!
+
+  """The number of rows produced by the query"""
+  rowsProduced: Int
+
+  """The schema ids"""
+  schemaIds: [String!]!
+
+  """The snowflake warehouse size used to run the query"""
+  snowflakeWarehouseSize: String
+
+  """The source user id associated to the query"""
+  sourceUserId: String
+
+  """The tables used in the query"""
+  tables: [TableInQueryOutput!]!
+
+  """date of the execution of the query"""
+  timestamp: Timestamp!
+
+  """The warehouse ids"""
+  warehouseIds: [String!]!
+}
+
+"""Table data related to a SQL query"""
+type TableInQueryOutput {
+  """The table id"""
+  id: String!
+
+  """The table name"""
+  name: String!
+
+  """The table path"""
+  path: String!
+}
+
+"""Sorting options for results"""
+input QuerySorting {
+  """The direction to sort the results: by `ASC` or `DESC`"""
+  direction: SortingDirectionEnum = ASC
+
+  """The position of null values in the results: `FIRST` or `LAST`"""
+  nullsPriority: SortingNullsPriority = LAST
+
+  """Available attributes to sort the results by"""
+  sortingKey: QuerySortingKey!
+}
+
+"""The possible sort fields for queries"""
+enum QuerySortingKey {
+  """Sort by the query hash"""
+  hash
+
+  """Sort by the query type (SELECT or WRITE)"""
+  queryType
+
+  """Sort by the query timestamp"""
+  timestamp
+}
+
+"""
+Allow to refine selection of the results using multiple scopes. Note: all scopes are additive
+"""
+input GetTableQueriesScope {
+  """Scope by database ID"""
+  databaseId: String
+
+  """Filter by query type (SELECT or WRITE)"""
+  queryType: QueryType
+
+  """Scope by schema ID"""
+  schemaId: String
+
+  """Scope by specific table IDs (max 50 ids)"""
+  tableIds: [String!]
+
+  """how to filter by table IDs - default is ALL"""
+  tableIdsFilterMode: SearchArrayFilterMode
+
+  """Scope by warehouse ID"""
+  warehouseId: String
+}
+
+"""How search array filter should capture provided array values"""
+enum SearchArrayFilterMode {
+  """All values of the provided array must be present in the target array"""
+  ALL
+
+  """
+  At least one value of the provided array must be present in the target array
+  """
+  ANY
+}
+
+"""Paginated response from the executed query or mutation"""
+type GetTagsOutput {
+  """Number of entities to return per page"""
+  nbPerPage: Int!
+
+  """The page number (start at 0)"""
+  page: Int
+
+  """The total number of entities"""
+  totalCount: Int!
+
+  """Field containing the response from the executed query or mutation"""
+  data: [Tag!]!
+}
+
+"""Sorting options for results"""
+input TagSorting {
+  """The direction to sort the results: by `ASC` or `DESC`"""
+  direction: SortingDirectionEnum = ASC
+
+  """The position of null values in the results: `FIRST` or `LAST`"""
+  nullsPriority: SortingNullsPriority = LAST
+
+  """Available attributes to sort the results by"""
+  sortingKey: TagSortingKey!
+}
+
+"""The possible sort fields"""
+enum TagSortingKey {
+  """Sort by the tag label"""
+  label
+}
+
+"""
+Allow to refine selection of the results using multiple scopes. Note: all scopes are additive
+"""
+input GetTagsScope {
+  """Scope by multiple tag IDs"""
+  ids: [String!]
+
+  """Scope by a substring of the tag label, case insensitive"""
+  labelContains: String
+}
+
+"""Response from the executed query or mutation"""
+type GetTeamsOutput {
+  """Date and time the resource was created"""
+  createdAt: Timestamp!
+
+  """The description of the team"""
+  description: String
+
+  """The email of the team"""
+  email: String
+
+  """the unique id of the team"""
+  id: String!
+
+  """List of users ids that are members"""
+  memberIds: [String!]!
+
+  """The name of the team"""
+  name: String!
+
+  """List of entities ids owned by the team"""
+  ownedAssetIds: [String!]!
+
+  """The slack channel of the team (start with #)"""
+  slackChannel: String
+
+  """The slack group of the team (start with @)"""
+  slackGroup: String
+}
+
+"""Paginated response from the executed query or mutation"""
+type GetTermsOutput {
+  """Number of entities to return per page"""
+  nbPerPage: Int!
+
+  """The page number (start at 0)"""
+  page: Int
+
+  """The total number of entities"""
+  totalCount: Int!
+
+  """Field containing the response from the executed query or mutation"""
+  data: [Term!]!
+}
+
+"""Sorting options for results"""
+input TermSorting {
+  """The direction to sort the results: by `ASC` or `DESC`"""
+  direction: SortingDirectionEnum = ASC
+
+  """The position of null values in the results: `FIRST` or `LAST`"""
+  nullsPriority: SortingNullsPriority = LAST
+
+  """Available attributes to sort the results by"""
+  sortingKey: TermSortingKey!
+}
+
+"""The possible sort fields"""
+enum TermSortingKey {
+  """Sort by the term name"""
+  name
+
+  """Sort by the number of owners and team owners"""
+  ownersAndTeamOwnersCount
+}
+
+"""
+Allow to refine selection of the results using multiple scopes. Note: all scopes are additive
+"""
+input GetTermsScope {
+  """Scope by multiple term IDs"""
+  ids: [String!]
+
+  """Scope by a substring of the term name, case insensitive"""
+  nameContains: String
+}
+
+"""Response from the executed query or mutation"""
+type GetUsersOutput {
+  """The email of the user"""
+  email: String!
+
+  """The first name of the user"""
+  firstName: String!
+
+  """Whether the user has validated their email"""
+  isEmailValidated: Boolean!
+
+  """The ID of the user"""
+  id: String!
+
+  """The last name of the user"""
+  lastName: String!
+
+  """The role of the user"""
+  role: UserRole!
+
+  """The status of the user"""
+  status: UserStatus!
+
+  """List of entities owned by the user"""
+  ownedAssetIds: [String!]!
+
+  """ids of the teams this user belongs to"""
+  teamIds: [String!]!
+
+  """The date and time the user was created"""
+  createdAt: Timestamp!
+}
+
+type Mutation {
+  """
+  Create many columns
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  createColumns(
+    """Expected input object to run the query or mutation"""
+    data: [CreateColumnInput!]!
+  ): [Column!]!
+
+  """
+  Update many columns
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  updateColumns(
+    """Expected input object to run the query or mutation"""
+    data: [UpdateColumnInput!]!
+  ): [Column!]!
+
+  """
+  :::warning[Restricted Access]
+  
+  This endpoint access is restricted. Please reach out to your point of contact at Catalog if you are interested.
+  :::
+  
+  Update many column external descriptions
+  
+  ### Allowed relations
+  
+  You can request the following relations in the response:
+  
+  - `tagEntities`
+  - `tagEntities.tag`
+  """
+  updateColumnDescriptions(
+    """Expected input object to run the query or mutation"""
+    data: [UpdateColumnDescriptionInput!]!
+  ): [Column!]! @deprecated(reason: "Use updateColumnsMetadata instead")
+
+  """
+  :::warning[Restricted Access]
+  
+  This endpoint access is restricted. Please reach out to your point of contact at Catalog if you are interested.
+  :::
+  
+  Update many column metadata (description, external description, PII, primary key)
+  
+  ### Allowed relations
+  
+  You can request the following relations in the response:
+  
+  - `tagEntities`
+  - `tagEntities.tag`
+  """
+  updateColumnsMetadata(
+    """Expected input object to run the query or mutation"""
+    data: [UpdateColumnsMetadataInput!]!
+  ): [Column!]!
+
+  """
+  :::warning[Restricted Access]
+  
+  This endpoint access is restricted. Please reach out to your point of contact at Catalog if you are interested.
+  :::
+  
+  This mutation will allow you to create batches of databases to administrate through this API.
+  
+  Note that in order not to conflict with Catalog’s extraction system, you will only be able to create databases on warehouses created from this API.
+  
+  You will also need to craft and provide custom external ids used as technical identifiers.
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  createDatabases(
+    """Expected input object to run the query or mutation"""
+    data: [CreateDatabaseInput!]!
+  ): [Database!]!
+
+  """
+  :::warning[Restricted Access]
+  
+  This endpoint access is restricted. Please reach out to your point of contact at Catalog if you are interested.
+  :::
+  
+  This mutation will allow you to batch update the databases you created.
+  
+  Note that in order not to mess with data ingested by Catalog, only the databases belonging to sources created from the API will be editable.
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  updateDatabases(
+    """Expected input object to run the query or mutation"""
+    data: [UpdateDatabaseInput!]!
+  ): [Database!]!
+
+  "Delete many pinned assets\n\n"
+  removePinnedAssets(
+    """Expected input object to run the query or mutation"""
+    data: [EntitiesLinkInput!]!
+  ): Boolean!
+
+  """
+  Upsert many pinned assets
+  
+  ### Allowed relations
+  
+  You can request the following relations in the response:
+  
+  - `fromDashboard.source`
+  - `fromDashboard`
+  - `fromTable.schema.database.warehouse`
+  - `fromTable.schema.database`
+  - `fromTable.schema`
+  - `fromTable`
+  - `fromTerm.parentTerm`
+  - `fromTerm`
+  - `toColumn.table.schema.database.warehouse`
+  - `toColumn.table.schema.database`
+  - `toColumn.table.schema`
+  - `toColumn.table`
+  - `toColumn`
+  - `toDashboard.source`
+  - `toDashboard`
+  - `toDashboardField.dashboard.source`
+  - `toDashboardField.dashboard`
+  - `toDashboardField`
+  - `toTable.schema.database.warehouse`
+  - `toTable.schema.database`
+  - `toTable.schema`
+  - `toTable`
+  - `toTerm.parentTerm`
+  - `toTerm`
+  """
+  upsertPinnedAssets(
+    """Expected input object to run the query or mutation"""
+    data: [EntitiesLinkInput!]!
+  ): [EntitiesLink!]!
+
+  """
+  Create many External Links
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  createExternalLinks(
+    """Expected input object to run the query or mutation"""
+    data: [CreateExternalLinkInput!]!
+  ): [ExternalLink!]!
+
+  """
+  Update many External Links
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  updateExternalLinks(
+    """Expected input object to run the query or mutation"""
+    data: [UpdateExternalLinkInput!]!
+  ): [ExternalLink!]!
+
+  "Delete many External Links\n\n"
+  deleteExternalLinks(
+    """Expected input object to run the query or mutation"""
+    data: [DeleteExternalLinkInput!]!
+  ): Boolean!
+
+  "Delete many Lineages\n\n"
+  deleteLineages(
+    """Expected input object to run the query or mutation"""
+    data: [DeleteLineageInput!]!
+  ): Boolean!
+
+  """
+  Upsert many Lineages
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  upsertLineages(
+    """Expected input object to run the query or mutation"""
+    data: [UpsertLineageInput!]!
+  ): [Lineage!]!
+
+  "Delete many User Owners\n\n"
+  removeUserOwners(
+    """Expected input object to run the query or mutation"""
+    data: OwnerInput!
+  ): Boolean!
+
+  """
+  Upsert many User Owners
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  upsertUserOwners(
+    """Expected input object to run the query or mutation"""
+    data: OwnerInput!
+  ): [OwnerEntity!]!
+
+  "Delete many Quality Checks\n\n"
+  removeDataQualities(
+    """Expected input object to run the query or mutation"""
+    data: RemoveQualityChecksInput!
+  ): Boolean!
+
+  """
+  With this mutation you can add or update multiple quality checks on a single table.
+  
+  Quality checks are unique per `tableId` and `externalId` combination.
+  
+  Thus, for a given `tableId` and `externalId` pair, we only keep the latest test run.
+  
+  This means that for the provided checks, if the `runAt` value is set after the existing one, the new value will replace it. If however one test exists on those keys and has a `runAt` after the one you’re trying to insert, it will not be added.
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  upsertDataQualities(
+    """Expected input object to run the query or mutation"""
+    data: UpsertQualityChecksInput!
+  ): [QualityCheck!]!
+
+  """
+  :::warning[Restricted Access]
+  
+  This endpoint access is restricted. Please reach out to your point of contact at Catalog if you are interested.
+  :::
+  
+  This mutation will allow you to create batches of schemas to administrate through this API.
+  
+  Note that in order not to conflict with Catalog’s extraction system, you will only be able to create schemas on databases and warehouses created through this API.
+  
+  You will also need to craft and provide custom external ids used as technical identifiers.
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  createSchemas(
+    """Expected input object to run the query or mutation"""
+    data: [CreateSchemaInput!]!
+  ): [Schema!]!
+
+  """
+  :::warning[Restricted Access]
+  
+  This endpoint access is restricted. Please reach out to your point of contact at Catalog if you are interested.
+  :::
+  
+  This mutation will allow you to batch update the schemas you created.
+  
+  Note that in order not to mess with data ingested by Catalog, only the schemas belonging to sources and databases created from this API will be editable.
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  updateSchemas(
+    """Expected input object to run the query or mutation"""
+    data: [UpdateSchemaInput!]!
+  ): [Schema!]!
+
+  """
+  :::warning[Restricted Access]
+  
+  This endpoint access is restricted. Please reach out to your point of contact at Catalog if you are interested.
+  :::
+  
+  This mutation allows you to create a single custom warehouse source to administrate through this API.
+  
+  This comes with some restrictions:
+  
+  - The created source will have a few fields with enforced values:
+    - `origin` set to `API`
+    - `type` set to `WAREHOUSE`
+    - `technology` set to `GENERIC_WAREHOUSE`
+  - You will only be allowed **a single source** from this API (use the `updateSource` mutation to edit or delete it)
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  createSource(
+    """Expected input object to run the query or mutation"""
+    data: CreateSourceInput!
+  ): Source!
+
+  """
+  :::warning[Restricted Access]
+  
+  This endpoint access is restricted. Please reach out to your point of contact at Catalog if you are interested.
+  :::
+  
+  This mutation allows you to update the API source you created. 
+  Note that in order not to mess with data ingested by Catalog, only the source created from the API will be editable.
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  updateSource(
+    """Expected input object to run the query or mutation"""
+    data: UpdateSourceInput!
+  ): Source!
+
+  """
+  :::warning[Restricted Access]
+  
+  This endpoint access is restricted. Please reach out to your point of contact at Catalog if you are interested.
+  :::
+  
+  This mutation will allow you to create batches of tables to administrate through this API.
+  
+  Note that in order not to conflict with Catalog’s extraction system, you will only be able to create tables on schemas, databases and warehouses created through this API.
+  
+  You will also need to craft and provide custom external ids used as technical identifiers.
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  createTables(
+    """Expected input object to run the query or mutation"""
+    data: [CreateTableInput!]!
+  ): [Table!]!
+
+  """
+  :::warning[Restricted Access]
+  
+  This endpoint access is restricted. Please reach out to your point of contact at Catalog if you are interested.
+  :::
+  
+  Update many tables
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  updateTables(
+    """Expected input object to run the query or mutation"""
+    data: [UpdateTableInput!]!
+  ): [Table!]!
+
+  """
+  :::warning[Restricted Access]
+  
+  This endpoint access is restricted. Please reach out to your point of contact at Catalog if you are interested.
+  :::
+  
+  Update many tables external description
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  updateTableDescriptions(
+    """Expected input object to run the query or mutation"""
+    data: [UpdateTableDescriptionInput!]!
+  ): [Table!]!
+
+  """
+  Attach tags to entities by using their tag labels, and create a new tag if it does not already exist.
+  """
+  attachTags(
+    """Expected input object to run the query or mutation"""
+    data: [BaseTagEntityInput!]!
+  ): Boolean!
+
+  """
+  Detach tags from entities by using tag labels, and delete the tag if there are no entities attached to it anymore.
+  """
+  detachTags(
+    """Expected input object to run the query or mutation"""
+    data: [BaseTagEntityInput!]!
+  ): Boolean!
+
+  """Add users to a Team"""
+  addTeamUsers(
+    """Expected input object to run the query or mutation"""
+    data: TeamUsersInput!
+  ): Boolean!
+
+  """
+  Upsert a Team. If the name do not exist, then it will create a new team otherwise it will update the existing team.
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  upsertTeam(
+    """Expected input object to run the query or mutation"""
+    data: UpsertTeamInput!
+  ): Team!
+
+  """Remove users from a Team"""
+  removeTeamUsers(
+    """Expected input object to run the query or mutation"""
+    data: TeamUsersInput!
+  ): Boolean!
+
+  """Remove team ownership to assets in Catalog"""
+  removeTeamOwners(
+    """Expected input object to run the query or mutation"""
+    data: TeamOwnerInput!
+  ): Boolean!
+
+  """
+  Add team ownership to assets in Catalog
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  upsertTeamOwners(
+    """Expected input object to run the query or mutation"""
+    data: TeamOwnerInput!
+  ): [TeamOwnerEntity!]!
+
+  """
+  Create a Term either at root level (`parentTermId` is `null`) or as children of a given Term.
+  
+  - `name` is mandatory
+  - `description` is mandatory and supports markdown
+  - `linkedTagId` will override any linked term on the given tag
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  createTerm(
+    """Expected input object to run the query or mutation"""
+    data: CreateTermInput!
+  ): Term!
+
+  """
+  Update an existing Term, `id` of a valid Term is necessary, all other fields are optional.
+  
+  - `description` supports markdown
+  - `linkedTagId` will override any linked term on the given tag
+  
+  ### Allowed relations
+  
+  You cannot request any relation from the returned response
+  """
+  updateTerm(
+    """Expected input object to run the query or mutation"""
+    data: UpdateTermInput!
+  ): Term!
+
+  """
+  Delete an existing Term, `id` of a valid Term is necessary. This operation cannot be reversed.
+  """
+  deleteTerm(
+    """Expected input object to run the query or mutation"""
+    data: DeleteTermInput!
+  ): Boolean!
+}
+
+"""Input object expected by the query or mutation"""
+input CreateColumnInput {
+  """If present, indicates when the column was deleted"""
+  deletedAt: DateTime
+
+  """The external documentation for this column"""
+  externalDescription: String
+
+  """
+  The original column position index as imported from the source warehouse
+  """
+  sourceOrder: Int
+
+  """The data type for the column. For example: INTEGER"""
+  dataType: String!
+
+  """The technical column identifier from the warehouse internal structure"""
+  externalId: String!
+
+  """True if this column is nullable"""
+  isNullable: Boolean!
+
+  """The column name"""
+  name: String!
+
+  """The column belongs to this table ID"""
+  tableId: String!
+
+  """The PII status to apply to the column"""
+  isPii: Boolean
+
+  """The PrimaryKey status to apply to the column"""
+  isPrimaryKey: Boolean
+}
+
+"""Input object expected by the query or mutation"""
+input UpdateColumnInput {
+  """If present, indicates when the column was deleted"""
+  deletedAt: DateTime
+
+  """The external documentation for this column"""
+  externalDescription: String
+
+  """
+  The original column position index as imported from the source warehouse
+  """
+  sourceOrder: Int
+
+  """The data type for the column. For example: INTEGER"""
+  dataType: String
+
+  """The technical column identifier from the warehouse structure"""
+  externalId: String
+
+  """The id of the column you are looking for"""
+  id: String!
+
+  """True if this column is nullable"""
+  isNullable: Boolean
+
+  """The PII status to apply to the column"""
+  isPii: Boolean
+
+  """The PrimaryKey status to apply to the column"""
+  isPrimaryKey: Boolean
+
+  """The column name"""
+  name: String
+}
+
+"""Input object expected by the query or mutation"""
+input UpdateColumnDescriptionInput {
+  """The external description for this column"""
+  externalDescription: String
+
+  """the id of the column we want to update"""
+  id: String!
+}
+
+"""Input object expected by the query or mutation"""
+input UpdateColumnsMetadataInput {
+  """The external description for this column"""
+  externalDescription: String
+
+  """the id of the column we want to update"""
+  id: String!
+
+  """The user documentation for this column"""
+  descriptionRaw: String
+
+  """True if this column is PII related"""
+  isPii: Boolean
+
+  """True if this column is a primary key"""
+  isPrimaryKey: Boolean
+}
+
+"""Input object expected by the query or mutation"""
+input CreateDatabaseInput {
+  """If present, indicates when the database was deleted"""
+  deletedAt: DateTime
+
+  """The Catalog documentation for this database (max length: 500)"""
+  description: String
+
+  """Indicate if the database should be hidden"""
+  isHidden: Boolean
+
+  """The technical database identifier from the warehouse structure"""
+  externalId: String!
+
+  """The database name"""
+  name: String!
+
+  """The id of the parent warehouse"""
+  sourceId: String!
+}
+
+"""Input object expected by the query or mutation"""
+input UpdateDatabaseInput {
+  """If present, indicates when the database was deleted"""
+  deletedAt: DateTime
+
+  """The Catalog documentation for this database (max length: 500)"""
+  description: String
+
+  """Indicate if the database should be hidden"""
+  isHidden: Boolean
+
+  """The technical database identifier from the warehouse structure"""
+  externalId: String
+
+  """The database id"""
+  id: String!
+
+  """The database name"""
+  name: String
+}
+
+"""Input object expected by the query or mutation"""
+input EntitiesLinkInput {
+  """The entity from which the entitiesLink is issued"""
+  from: EntitiesLinkTargetInput!
+
+  """The entity to which the entitiesLink points"""
+  to: EntitiesLinkTargetInput!
+}
+
+"""Input object expected by the query or mutation"""
+input EntitiesLinkTargetInput {
+  """The target entity id"""
+  id: String!
+
+  """The target entity type"""
+  type: EntitiesLinkTargetType!
+}
+
+"""Input object expected by the query or mutation"""
+input CreateExternalLinkInput {
+  """The table to which the link refers"""
+  tableId: String!
+
+  """The origin of the link"""
+  technology: ExternalLinkTechnology!
+
+  """the url of the link"""
+  url: String!
+}
+
+"""Input object expected by the query or mutation"""
+input UpdateExternalLinkInput {
+  """the id of the link to update"""
+  id: String!
+
+  """the url of the link"""
+  url: String
+}
+
+"""Input object expected by the query or mutation"""
+input DeleteExternalLinkInput {
+  """The id of the link to delete"""
+  id: String!
+}
+
+"""Input object expected by the query or mutation"""
+input DeleteLineageInput {
+  """The id of the children dashboard of the lineage"""
+  childDashboardId: String
+
+  """The id of the children table of the lineage"""
+  childTableId: String
+
+  """The id of the parent dashboard of the lineage"""
+  parentDashboardId: String
+
+  """The id of the parent table of the lineage"""
+  parentTableId: String
+}
+
+"""Input object expected by the query or mutation"""
+input UpsertLineageInput {
+  """The id of the children dashboard of the lineage"""
+  childDashboardId: String
+
+  """The id of the children table of the lineage"""
+  childTableId: String
+
+  """The id of the parent dashboard of the lineage"""
+  parentDashboardId: String
+
+  """The id of the parent table of the lineage"""
+  parentTableId: String
+}
+
+"""Input object expected by the query or mutation"""
+input OwnerInput {
+  """Scope by multiple target entities (dashboard, table, term)"""
+  targetEntities: [EntityTarget!]
+
+  """The id of the user"""
+  userId: String!
+}
+
+"""Input object expected by the query or mutation"""
+input EntityTarget {
+  """The id of the entity"""
+  entityId: String
+
+  """The type of the entity"""
+  entityType: EntityTargetType
+}
+
+"""Input object expected by the query or mutation"""
+input RemoveQualityChecksInput {
+  """Array of quality checks tableId/externalId keys"""
+  qualityChecks: [QualityCheckInput!]!
+}
+
+"""Quality check identifier"""
+input QualityCheckInput {
+  """The technical quality check identifier"""
+  externalId: String!
+
+  """Table id the target quality check is linked to"""
+  tableId: String!
+}
+
+"""Input object expected by the query or mutation"""
+input UpsertQualityChecksInput {
+  """Table id linked to quality checks array."""
+  tableId: String!
+
+  """Array of quality checks"""
+  qualityChecks: [BaseQualityCheckInput!]!
+}
+
+"""Input object expected by the query or mutation"""
+input BaseQualityCheckInput {
+  """Column id linked to the quality check."""
+  columnId: String
+
+  """Quality check description"""
+  description: String
+
+  """The technical quality check identifier"""
+  externalId: String!
+
+  """Quality check name"""
+  name: String!
+
+  """Time at which the quality check ran"""
+  runAt: DateTime!
+
+  """Status of the quality check"""
+  status: QualityStatus!
+
+  """Url of the quality check"""
+  url: String
+}
+
+"""Input object expected by the query or mutation"""
+input CreateSchemaInput {
+  """If present, indicates when the schema was deleted"""
+  deletedAt: DateTime
+
+  """The Catalog documentation for this schema"""
+  description: String
+
+  """Whether the schema should be hidden"""
+  isHidden: Boolean
+
+  """The id of the parent database"""
+  databaseId: String!
+
+  """The technical schema identifier from the warehouse schema structure"""
+  externalId: String!
+
+  """The schema name"""
+  name: String!
+}
+
+"""Input object expected by the query or mutation"""
+input UpdateSchemaInput {
+  """If present, indicates when the schema was deleted"""
+  deletedAt: DateTime
+
+  """The Catalog documentation for this schema"""
+  description: String
+
+  """Whether the schema should be hidden"""
+  isHidden: Boolean
+
+  """The technical schema identifier from the warehouse schema structure"""
+  externalId: String
+
+  """The schema id"""
+  id: String!
+
+  """The schema name"""
+  name: String
+}
+
+"""Input object expected by the query or mutation"""
+input CreateSourceInput {
+  """The name of the source to add"""
+  name: String!
+}
+
+"""Input object expected by the query or mutation"""
+input UpdateSourceInput {
+  """The time at which the source was soft deleted"""
+  deletedAt: DateTime
+
+  """The id of the source to update"""
+  id: String!
+
+  """The name of the source to update"""
+  name: String
+}
+
+"""Input object expected by the query or mutation"""
+input CreateTableInput {
+  """The documentation from the source for this table"""
+  externalDescription: String
+
+  """The last known datetime of refresh for this table"""
+  lastRefreshedAt: DateTime
+
+  """The number of queries on which popularity is based"""
+  numberOfQueries: Int
+
+  """The table popularity rated out of 1000000"""
+  popularity: Int
+
+  """The size of the table (in megabytes)"""
+  tableSize: Int
+
+  """The type of this table"""
+  tableType: TableType
+
+  """The external url to the table"""
+  url: String
+
+  """The technical table identifier from the warehouse table structure"""
+  externalId: String!
+
+  """The table name"""
+  name: String!
+
+  """
+  The schema ID to link with the table that belongs to. Required at table creation. Cannot be modified later
+  """
+  schemaId: String!
+}
+
+"""Input object expected by the query or mutation"""
+input UpdateTableInput {
+  """The documentation from the source for this table"""
+  externalDescription: String
+
+  """The last known datetime of refresh for this table"""
+  lastRefreshedAt: DateTime
+
+  """The number of queries on which popularity is based"""
+  numberOfQueries: Int
+
+  """The table popularity rated out of 1000000"""
+  popularity: Int
+
+  """The size of the table (in megabytes)"""
+  tableSize: Int
+
+  """The type of this table"""
+  tableType: TableType
+
+  """The external url to the table"""
+  url: String
+
+  """If present, indicates when the table was deleted"""
+  deletedAt: DateTime
+
+  """The technical table identifier from the warehouse table structure"""
+  externalId: String
+
+  """The table id"""
+  id: String!
+
+  """The table name"""
+  name: String
+}
+
+"""Input object expected by the query or mutation"""
+input UpdateTableDescriptionInput {
+  """The external description for the table"""
+  externalDescription: String
+
+  """The table id"""
+  id: String!
+}
+
+"""Input object expected by the query or mutation"""
+input BaseTagEntityInput {
+  """The type of the tagged entity"""
+  entityType: TagEntityType!
+
+  """The id of the tagged entity"""
+  entityId: String!
+
+  """The label of the tag"""
+  label: String!
+}
+
+"""Tag's target entity type"""
+enum TagEntityType {
+  """The column entity"""
+  COLUMN
+
+  """The dashboard entity"""
+  DASHBOARD
+
+  """The dashboard field entity"""
+  DASHBOARD_FIELD
+
+  """The table entity"""
+  TABLE
+
+  """The knowledge entity"""
+  TERM
+}
+
+"""Input object expected by the query or mutation"""
+input TeamUsersInput {
+  """Emails of users to add or remove from the team"""
+  emails: [String!]!
+
+  """The id of the team"""
+  id: String!
+}
+
+"""Input object expected by the query or mutation"""
+input UpsertTeamInput {
+  """The description of the team"""
+  description: String
+
+  """The email of the team"""
+  email: String
+
+  """The name of the team: unique across your account"""
+  name: String!
+
+  """
+  Private slack channel of the team. Used for notifications (only available for admin or service).  Don't forget to invite the slack bot into this channel!
+  """
+  storedPrivateSlackChannel: String
+
+  """The slack channel of the team (start with #)"""
+  slackChannel: String
+
+  """The slack group of the team (start with @)"""
+  slackGroup: String
+}
+
+"""Input object expected by the query or mutation"""
+input TeamOwnerInput {
+  """Scope by multiple tag IDs"""
+  targetEntities: [EntityTarget!]
+
+  """The id of the team"""
+  teamId: String!
+}
+
+"""Input object expected by the query or mutation"""
+input CreateTermInput {
+  """Description for the term, supports markdown"""
+  description: String!
+
+  """ID of the tag to link to the term"""
+  linkedTagId: String
+
+  """Name of the term"""
+  name: String!
+
+  """ID of the parent term, no value will create a root term"""
+  parentTermId: String
+}
+
+"""Input object expected by the query or mutation"""
+input UpdateTermInput {
+  """Description for the term, supports markdown"""
+  description: String
+
+  """ID of the term to update"""
+  id: String!
+
+  """ID of the tag to link to the term, remove by sending null"""
+  linkedTagId: String
+
+  """Name of the term"""
+  name: String
+
+  """ID of the parent term, null will set as root term"""
+  parentTermId: String
+}
+
+"""Input object expected by the query or mutation"""
+input DeleteTermInput {
+  """id of the term to delete"""
+  id: String!
+}

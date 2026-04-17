@@ -16,6 +16,7 @@
     "postbuild": "chmod +x dist/index.js",
     "dev": "tsc --watch",
     "codegen": "node scripts/codegen.mjs",
+    "smoke": "npm run build && node scripts/smoke-query.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "preversion": "npm run build && npm audit --omit=dev",
@@ -47,7 +48,10 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@graphql-codegen/cli": "^6.3.0",
+    "@graphql-codegen/typescript": "^5.0.10",
     "@types/node": "^22.0.0",
+    "graphql": "^16.13.2",
     "typescript": "^5.7.0",
     "vitest": "^3.1.0"
   }
