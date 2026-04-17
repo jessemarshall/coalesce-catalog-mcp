@@ -2,14 +2,19 @@ import { z } from "zod";
 import type { CatalogClient } from "../client.js";
 import {
   READ_ONLY_ANNOTATIONS,
+  WRITE_ANNOTATIONS,
+  DESTRUCTIVE_ANNOTATIONS,
   type CatalogToolDefinition,
 } from "../catalog/types.js";
 import {
   GET_TAGS,
   GET_TERMS,
   GET_DATA_PRODUCTS,
+  ATTACH_TAGS,
+  DETACH_TAGS,
 } from "../catalog/operations.js";
 import type {
+  BaseTagEntityInput,
   DataProductSorting,
   DataProductSortingKey,
   EntityTargetType,
@@ -20,6 +25,7 @@ import type {
   GetTermsOutput,
   GetTermsScope,
   Pagination,
+  TagEntityType,
   TagSorting,
   TagSortingKey,
   TermSorting,
@@ -267,6 +273,85 @@ export function defineAnnotationTools(
         );
         const out = data.getDataProducts;
         return listEnvelope(out.page ?? 0, out.nbPerPage, out.totalCount, out.data);
+      }, client),
+    },
+
+    // ── Mutations ──────────────────────────────────────────────────────────
+
+    {
+      name: "catalog_attach_tags",
+      config: {
+        title: "Attach Tags to Entities",
+        description:
+          "Attach tags to one or more entities (tables, columns, dashboards, dashboard fields, or terms). Tags are addressed by *label* — if a tag with the given label does not exist, it is created automatically. Each input row binds one tag label to one entity.\n\n" +
+          "Accepts up to 500 rows per call. Requires a READ_WRITE API token. Returns a boolean success flag (the underlying mutation has no per-row result).",
+        inputSchema: {
+          data: z
+            .array(
+              z.object({
+                entityType: z
+                  .enum(["COLUMN", "DASHBOARD", "DASHBOARD_FIELD", "TABLE", "TERM"])
+                  .describe("What kind of entity to tag."),
+                entityId: z.string().min(1).describe("Catalog UUID of the entity."),
+                label: z
+                  .string()
+                  .min(1)
+                  .describe("Tag label. Created if it doesn't already exist."),
+              })
+            )
+            .min(1)
+            .max(500)
+            .describe("Batch of tag attachments (max 500)."),
+        },
+        annotations: WRITE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input = args.data as Array<{
+          entityType: TagEntityType;
+          entityId: string;
+          label: string;
+        }>;
+        const data = await c.query<{ attachTags: boolean }>(ATTACH_TAGS, {
+          data: input satisfies BaseTagEntityInput[],
+        });
+        return { success: data.attachTags, attached: input.length };
+      }, client),
+    },
+
+    {
+      name: "catalog_detach_tags",
+      config: {
+        title: "Detach Tags from Entities",
+        description:
+          "Remove tag bindings from entities. Identifies the binding by (entityType, entityId, label) — the same shape as catalog_attach_tags. Does not delete the tag itself, only the association.\n\n" +
+          "Accepts up to 500 rows per call. Requires a READ_WRITE API token. Returns a boolean success flag.",
+        inputSchema: {
+          data: z
+            .array(
+              z.object({
+                entityType: z
+                  .enum(["COLUMN", "DASHBOARD", "DASHBOARD_FIELD", "TABLE", "TERM"])
+                  .describe("The entity the tag is currently attached to."),
+                entityId: z.string().min(1).describe("Catalog UUID of the entity."),
+                label: z.string().min(1).describe("Tag label to remove."),
+              })
+            )
+            .min(1)
+            .max(500)
+            .describe("Batch of tag detachments (max 500)."),
+        },
+        annotations: DESTRUCTIVE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input = args.data as Array<{
+          entityType: TagEntityType;
+          entityId: string;
+          label: string;
+        }>;
+        const data = await c.query<{ detachTags: boolean }>(DETACH_TAGS, {
+          data: input satisfies BaseTagEntityInput[],
+        });
+        return { success: data.detachTags, detached: input.length };
       }, client),
     },
   ];

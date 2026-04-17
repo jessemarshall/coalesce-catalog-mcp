@@ -274,6 +274,18 @@ export const GET_PINNED_ASSETS = /* GraphQL */ `
 
 // ── Tags, terms, data products ───────────────────────────────────────────
 
+export const ATTACH_TAGS = /* GraphQL */ `
+  mutation CatalogAttachTags($data: [BaseTagEntityInput!]!) {
+    attachTags(data: $data)
+  }
+`;
+
+export const DETACH_TAGS = /* GraphQL */ `
+  mutation CatalogDetachTags($data: [BaseTagEntityInput!]!) {
+    detachTags(data: $data)
+  }
+`;
+
 export const GET_TAGS = /* GraphQL */ `
   query CatalogGetTags(
     $scope: GetTagsScope
