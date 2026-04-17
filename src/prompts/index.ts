@@ -63,7 +63,7 @@ export function registerCatalogPrompts(server: McpServer): void {
           content: {
             type: "text",
             text:
-              "Resolve the asset (catalog_find_asset_by_path if the user gave a path; catalog_search_tables if just a name). Then: (1) call catalog_get_lineages with parentTableId to get downstream table and dashboard edges; group by childTableId vs childDashboardId. (2) Call catalog_get_table_queries to show SELECT-type queries that touched the table (filter queryType: SELECT). (3) Optionally hydrate top-N consumer dashboards via catalog_get_dashboard. Present a concise consumer map with counts and a sample of the most popular consumers.",
+              "Resolve the asset (catalog_find_asset_by_path if the user gave a path; catalog_search_tables if just a name). Then: (1) call catalog_get_lineages with parentTableId AND hydrate: true — the hydrated `parent`/`child` + `direction` fields remove the N+1 lookup pattern and give you readable asset names in one call. (2) Call catalog_get_table_queries to show SELECT-type queries that touched the table (filter queryType: SELECT). (3) Present the consumer map as a compact ASCII tree (see catalog://context/tool-routing for the tree format — one line per edge, `↑`/`↓` arrows, `lineageType` + ISO timestamp suffix). Dump raw JSON only if the user explicitly asks for it.",
           },
         },
       ],
@@ -84,7 +84,7 @@ export function registerCatalogPrompts(server: McpServer): void {
           content: {
             type: "text",
             text:
-              "Resolve the table (catalog_find_asset_by_path). Call catalog_trace_missing_lineage with the tableId. Summarize each finding the tool returns (severity + recommendation). For findings that warrant deeper inspection, follow up with catalog_get_lineages (table-level) and catalog_get_field_lineages (column-level). If the user has READ_WRITE access and wants to patch a gap, propose a specific catalog_upsert_lineages call and wait for explicit approval before executing.",
+              "Resolve the table (catalog_find_asset_by_path). Call catalog_trace_missing_lineage with the tableId. Summarize each finding the tool returns (severity + recommendation). For findings that warrant deeper inspection, follow up with catalog_get_lineages (hydrate: true) for table-level edges and catalog_get_field_lineages (hydrate: true) for column-level edges — render the results as an ASCII tree (see catalog://context/tool-routing) so the user can eyeball the shape, not the UUIDs. If the user has READ_WRITE access and wants to patch a gap, propose a specific catalog_upsert_lineages call and wait for explicit approval before executing.",
           },
         },
       ],

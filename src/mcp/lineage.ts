@@ -11,13 +11,20 @@ import {
   GET_FIELD_LINEAGES,
   UPSERT_LINEAGES,
   DELETE_LINEAGES,
+  GET_TABLES_SUMMARY,
+  GET_DASHBOARDS_SUMMARY,
+  GET_COLUMNS_SUMMARY,
 } from "../catalog/operations.js";
 import type {
   DeleteLineageInput,
+  FieldLineage,
+  GetColumnsOutput,
+  GetDashboardsOutput,
   GetFieldLineagesOutput,
   GetFieldLineagesScope,
   GetLineagesOutput,
   GetLineagesScope,
+  GetTablesOutput,
   FieldLineageSorting,
   FieldLineageSortingKey,
   Lineage,
@@ -99,6 +106,12 @@ const GetLineagesInputShape = {
   ),
   sortDirection: SortDirectionSchema.optional(),
   nullsPriority: NullsPrioritySchema.optional(),
+  hydrate: z
+    .boolean()
+    .optional()
+    .describe(
+      "When true, batch-resolves each edge's parent/child IDs to { id, name, kind } via one extra getTables + one extra getDashboards call. Use when presenting results to a user or doing multi-hop reasoning. Default: false (compact ID-only output)."
+    ),
   ...PaginationInputShape,
 };
 
@@ -183,6 +196,12 @@ const GetFieldLineagesInputShape = {
   ),
   sortDirection: SortDirectionSchema.optional(),
   nullsPriority: NullsPrioritySchema.optional(),
+  hydrate: z
+    .boolean()
+    .optional()
+    .describe(
+      "When true, batch-resolves each edge's parent/child IDs to { id, name, kind } via one extra getColumns + one extra getDashboards call. Dashboard-field endpoints cannot be hydrated (no public API) and are surfaced with hydrationUnavailable: true. Default: false."
+    ),
   ...PaginationInputShape,
 };
 
@@ -227,6 +246,215 @@ function buildFieldLineagesScope(
   return scope;
 }
 
+// ── Output enrichment: direction + ISO timestamps + endpoint hydration ──────
+
+type Direction = "upstream" | "downstream" | "specific";
+
+function toIso(millis: unknown): string | undefined {
+  if (typeof millis !== "number" || !Number.isFinite(millis)) return undefined;
+  try {
+    return new Date(millis).toISOString();
+  } catch {
+    return undefined;
+  }
+}
+
+function inferAssetDirection(input: Record<string, unknown>): Direction | undefined {
+  const hasParent =
+    typeof input.parentTableId === "string" ||
+    typeof input.parentDashboardId === "string";
+  const hasChild =
+    typeof input.childTableId === "string" ||
+    typeof input.childDashboardId === "string";
+  if (hasParent && !hasChild) return "downstream";
+  if (hasChild && !hasParent) return "upstream";
+  if (hasParent && hasChild) return "specific";
+  return undefined;
+}
+
+function inferFieldDirection(input: Record<string, unknown>): Direction | undefined {
+  const hasParent =
+    typeof input.parentColumnId === "string" ||
+    typeof input.parentDashboardFieldId === "string";
+  const hasChild =
+    typeof input.childColumnId === "string" ||
+    typeof input.childDashboardFieldId === "string" ||
+    typeof input.childDashboardSourceId === "string" ||
+    typeof input.childDashboardFieldSourceId === "string";
+  if (hasParent && !hasChild) return "downstream";
+  if (hasChild && !hasParent) return "upstream";
+  if (hasParent && hasChild) return "specific";
+  return undefined;
+}
+
+interface HydratedEndpoint {
+  id: string;
+  kind: "TABLE" | "DASHBOARD" | "COLUMN" | "DASHBOARD_FIELD";
+  name?: string | null;
+  /** For COLUMN: the parent tableId. For DASHBOARD_FIELD: null (no public endpoint). */
+  parentId?: string | null;
+  /** True when we attempted to hydrate but the endpoint doesn't exist in the public API (DASHBOARD_FIELD). */
+  hydrationUnavailable?: boolean;
+}
+
+async function hydrateAssetLineages(
+  client: CatalogClient,
+  edges: Lineage[]
+): Promise<Map<string, HydratedEndpoint>> {
+  const tableIds = new Set<string>();
+  const dashboardIds = new Set<string>();
+  for (const e of edges) {
+    if (e.parentTableId) tableIds.add(e.parentTableId);
+    if (e.childTableId) tableIds.add(e.childTableId);
+    if (e.parentDashboardId) dashboardIds.add(e.parentDashboardId);
+    if (e.childDashboardId) dashboardIds.add(e.childDashboardId);
+  }
+  const map = new Map<string, HydratedEndpoint>();
+  const tasks: Promise<unknown>[] = [];
+  if (tableIds.size > 0) {
+    tasks.push(
+      client
+        .query<{ getTables: GetTablesOutput }>(GET_TABLES_SUMMARY, {
+          scope: { ids: [...tableIds] },
+          pagination: { nbPerPage: Math.min(500, tableIds.size), page: 0 },
+        })
+        .then((r) => {
+          for (const t of r.getTables.data) {
+            map.set(t.id, { id: t.id, kind: "TABLE", name: t.name });
+          }
+        })
+    );
+  }
+  if (dashboardIds.size > 0) {
+    tasks.push(
+      client
+        .query<{ getDashboards: GetDashboardsOutput }>(GET_DASHBOARDS_SUMMARY, {
+          scope: { ids: [...dashboardIds] },
+          pagination: { nbPerPage: Math.min(500, dashboardIds.size), page: 0 },
+        })
+        .then((r) => {
+          for (const d of r.getDashboards.data) {
+            map.set(d.id, { id: d.id, kind: "DASHBOARD", name: d.name });
+          }
+        })
+    );
+  }
+  await Promise.all(tasks);
+  return map;
+}
+
+async function hydrateFieldLineages(
+  client: CatalogClient,
+  edges: FieldLineage[]
+): Promise<Map<string, HydratedEndpoint>> {
+  const columnIds = new Set<string>();
+  const dashboardIds = new Set<string>();
+  const dashboardFieldIds = new Set<string>();
+  for (const e of edges) {
+    if (e.parentColumnId) columnIds.add(e.parentColumnId);
+    if (e.childColumnId) columnIds.add(e.childColumnId);
+    if (e.childDashboardId) dashboardIds.add(e.childDashboardId);
+    if (e.parentDashboardFieldId)
+      dashboardFieldIds.add(e.parentDashboardFieldId);
+    if (e.childDashboardFieldId)
+      dashboardFieldIds.add(e.childDashboardFieldId);
+  }
+  const map = new Map<string, HydratedEndpoint>();
+  const tasks: Promise<unknown>[] = [];
+  if (columnIds.size > 0) {
+    tasks.push(
+      client
+        .query<{ getColumns: GetColumnsOutput }>(GET_COLUMNS_SUMMARY, {
+          scope: { ids: [...columnIds] },
+          pagination: { nbPerPage: Math.min(500, columnIds.size), page: 0 },
+        })
+        .then((r) => {
+          for (const c of r.getColumns.data) {
+            map.set(c.id, {
+              id: c.id,
+              kind: "COLUMN",
+              name: c.name,
+              parentId: c.tableId,
+            });
+          }
+        })
+    );
+  }
+  if (dashboardIds.size > 0) {
+    tasks.push(
+      client
+        .query<{ getDashboards: GetDashboardsOutput }>(GET_DASHBOARDS_SUMMARY, {
+          scope: { ids: [...dashboardIds] },
+          pagination: { nbPerPage: Math.min(500, dashboardIds.size), page: 0 },
+        })
+        .then((r) => {
+          for (const d of r.getDashboards.data) {
+            map.set(d.id, { id: d.id, kind: "DASHBOARD", name: d.name });
+          }
+        })
+    );
+  }
+  // Dashboard fields can't be hydrated via the public API — there's no
+  // getDashboardFields query. Record an unavailable placeholder so callers
+  // see the shape is consistent.
+  for (const id of dashboardFieldIds) {
+    map.set(id, {
+      id,
+      kind: "DASHBOARD_FIELD",
+      hydrationUnavailable: true,
+    });
+  }
+  await Promise.all(tasks);
+  return map;
+}
+
+function enrichAssetEdge(
+  edge: Lineage,
+  direction: Direction | undefined,
+  hydrationMap: Map<string, HydratedEndpoint> | null
+): Record<string, unknown> {
+  const parentId = edge.parentTableId ?? edge.parentDashboardId ?? undefined;
+  const childId = edge.childTableId ?? edge.childDashboardId ?? undefined;
+  return {
+    ...edge,
+    ...(direction ? { direction } : {}),
+    createdAtIso: toIso(edge.createdAt),
+    refreshedAtIso: toIso(edge.refreshedAt),
+    ...(hydrationMap && parentId
+      ? { parent: hydrationMap.get(parentId) ?? { id: parentId, kind: "TABLE" } }
+      : {}),
+    ...(hydrationMap && childId
+      ? { child: hydrationMap.get(childId) ?? { id: childId, kind: "TABLE" } }
+      : {}),
+  };
+}
+
+function enrichFieldEdge(
+  edge: FieldLineage,
+  direction: Direction | undefined,
+  hydrationMap: Map<string, HydratedEndpoint> | null
+): Record<string, unknown> {
+  const parentId =
+    edge.parentColumnId ?? edge.parentDashboardFieldId ?? undefined;
+  const childId =
+    edge.childColumnId ??
+    edge.childDashboardFieldId ??
+    edge.childDashboardId ??
+    undefined;
+  return {
+    ...edge,
+    ...(direction ? { direction } : {}),
+    createdAtIso: toIso(edge.createdAt),
+    refreshedAtIso: toIso(edge.refreshedAt),
+    ...(hydrationMap && parentId
+      ? { parent: hydrationMap.get(parentId) ?? { id: parentId, kind: "COLUMN" } }
+      : {}),
+    ...(hydrationMap && childId
+      ? { child: hydrationMap.get(childId) ?? { id: childId, kind: "COLUMN" } }
+      : {}),
+  };
+}
+
 // ── Tool factory ────────────────────────────────────────────────────────────
 
 export function defineLineageTools(
@@ -243,7 +471,9 @@ export function defineLineageTools(
           "  - Downstream of a table: { parentTableId: '<uuid>' }\n" +
           "  - Upstream of a table:   { childTableId:  '<uuid>' }\n" +
           "  - Table→dashboard edges: { parentTableId, withChildAssetType: 'DASHBOARD' }\n\n" +
-          "Returns edge records (not resolved asset names). Pair with catalog_get_table / catalog_get_dashboard (when available) to hydrate the endpoints. Edge provenance is exposed via lineageType: AUTOMATIC | MANUAL_CUSTOMER | MANUAL_OPS | OTHER_TECHNOS.",
+          "Each edge includes a derived `direction` field (upstream | downstream | specific) computed from the scope, and both epoch + ISO timestamps (`refreshedAtIso`, `createdAtIso`). Pass `hydrate: true` to enrich each row with `parent: { id, name, kind }` + `child: { id, name, kind }` — costs one extra batched call per direction but eliminates the N+1 pattern when the caller needs asset names.\n\n" +
+          "**When presenting lineage to a user, render a compact ASCII tree** (see catalog://context/tool-routing for the expected shape) rather than dumping raw JSON — the edge list is structured for machine parsing, not human readability.\n\n" +
+          "Edge provenance is exposed via lineageType: AUTOMATIC | MANUAL_CUSTOMER | MANUAL_OPS | OTHER_TECHNOS.",
         inputSchema: GetLineagesInputShape,
         annotations: READ_ONLY_ANNOTATIONS,
       },
@@ -263,7 +493,14 @@ export function defineLineageTools(
           variables
         );
         const out = data.getLineages;
-        return listEnvelope(out.page ?? 0, out.nbPerPage, out.totalCount, out.data);
+        const direction = inferAssetDirection(args);
+        const hydrationMap = args.hydrate === true
+          ? await hydrateAssetLineages(c, out.data)
+          : null;
+        const enriched = out.data.map((e) =>
+          enrichAssetEdge(e, direction, hydrationMap)
+        );
+        return listEnvelope(out.page ?? 0, out.nbPerPage, out.totalCount, enriched);
       }, client),
     },
 
@@ -277,7 +514,9 @@ export function defineLineageTools(
           "  - Downstream of a column:      { parentColumnId: '<uuid>' }\n" +
           "  - Upstream of a column:        { childColumnId:  '<uuid>' }\n" +
           "  - Columns feeding a dashboard: { hasDashboardChild: true, childDashboardId from getLineages }\n\n" +
-          "This API requires at least one filter — an unscoped call will return a large, unpaginated payload or be rejected server-side. Edge records are intentionally slim (IDs + type); hydrate via catalog_get_column (when available) for names.",
+          "This API requires at least one filter — an unscoped call will return a large, unpaginated payload or be rejected server-side.\n\n" +
+          "Each edge includes a derived `direction` field + ISO timestamps (`refreshedAtIso`, `createdAtIso`). Pass `hydrate: true` to resolve column and dashboard endpoints to `{ id, name, kind, parentId? }`. Dashboard-field endpoints return `hydrationUnavailable: true` — the public API has no `getDashboardFields` query.\n\n" +
+          "**When presenting field lineage to a user, render a compact ASCII tree** (see catalog://context/tool-routing) rather than dumping the raw JSON.",
         inputSchema: GetFieldLineagesInputShape,
         annotations: READ_ONLY_ANNOTATIONS,
       },
@@ -297,7 +536,14 @@ export function defineLineageTools(
           variables
         );
         const out = data.getFieldLineages;
-        return listEnvelope(out.page ?? 0, out.nbPerPage, out.totalCount, out.data);
+        const direction = inferFieldDirection(args);
+        const hydrationMap = args.hydrate === true
+          ? await hydrateFieldLineages(c, out.data)
+          : null;
+        const enriched = out.data.map((e) =>
+          enrichFieldEdge(e, direction, hydrationMap)
+        );
+        return listEnvelope(out.page ?? 0, out.nbPerPage, out.totalCount, enriched);
       }, client),
     },
 

@@ -28,6 +28,33 @@ Pick the tool that directly answers the user's question. Don't chain general-pur
 - Which dashboards read from table X: `catalog_get_lineages` with `parentTableId` + `withChildAssetType: DASHBOARD`
 - Suspected lineage gap: `catalog_trace_missing_lineage` (heuristic diagnostic, not authoritative)
 
+### Presenting lineage to a user — render a tree
+
+The lineage tools return structured edge records (`{ id, direction, parent, child, lineageType, refreshedAtIso, ... }`) optimised for machine parsing. **When showing lineage to a human**, render a compact ASCII tree instead of dumping the JSON. The expected shape:
+
+```
+FCT_ORDERS  (coalesce.sample_data.FCT_ORDERS)
+├─↑ WRK_ORDERS                         AUTOMATIC · refreshed 2026-03-15
+├─↓ DIM_CUSTOMER_LOYALTY               AUTOMATIC · refreshed 2026-03-15
+└─↓ V_SALES                            AUTOMATIC · refreshed 2026-03-15
+```
+
+Conventions:
+
+- `↑` = upstream (parent → this asset), `↓` = downstream (this asset → child)
+- One line per edge. Columns: asset name, `lineageType`, age or ISO timestamp
+- For multi-hop trees from `catalog_explore_lineage` (if you've called it with depth > 1), indent each hop with `│  ` for the continuation and `├─` / `└─` for the last sibling
+- Always call lineage tools with `hydrate: true` when a user is in the loop — skip it for agent-internal multi-step reasoning where IDs are enough
+- If an endpoint returns `hydrationUnavailable: true` (dashboard fields), render as `DASHBOARD_FIELD <uuid>` and note the limitation once at the end of the tree
+
+For field lineage the same shape applies, with column names in place of tables:
+
+```
+ORDER_TOTAL  (on FCT_ORDERS)
+├─↑ o_totalprice    (on STG_ORDERS)       AUTOMATIC · refreshed 2025-11-12
+└─↓ total_sales     (on FCT_DAILY_SALES)  AUTOMATIC · refreshed 2026-03-19
+```
+
 ## "How is this table used?" (SQL-level)
 
 - Every SQL query that touched these tables: `catalog_get_table_queries` (up to 50 tableIds, ALL/ANY filter).
