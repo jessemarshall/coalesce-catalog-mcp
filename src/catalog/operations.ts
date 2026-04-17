@@ -611,6 +611,27 @@ export const GET_COLUMN_JOINS = /* GraphQL */ `
   }
 `;
 
+export const UPSERT_LINEAGES = /* GraphQL */ `
+  mutation CatalogUpsertLineages($data: [UpsertLineageInput!]!) {
+    upsertLineages(data: $data) {
+      id
+      lineageType
+      parentTableId
+      parentDashboardId
+      childTableId
+      childDashboardId
+      createdAt
+      refreshedAt
+    }
+  }
+`;
+
+export const DELETE_LINEAGES = /* GraphQL */ `
+  mutation CatalogDeleteLineages($data: [DeleteLineageInput!]!) {
+    deleteLineages(data: $data)
+  }
+`;
+
 export const GET_LINEAGES = /* GraphQL */ `
   query CatalogGetLineages(
     $scope: GetLineagesScope

@@ -2,24 +2,31 @@ import { z } from "zod";
 import type { CatalogClient } from "../client.js";
 import {
   READ_ONLY_ANNOTATIONS,
+  WRITE_ANNOTATIONS,
+  DESTRUCTIVE_ANNOTATIONS,
   type CatalogToolDefinition,
 } from "../catalog/types.js";
 import {
   GET_LINEAGES,
   GET_FIELD_LINEAGES,
+  UPSERT_LINEAGES,
+  DELETE_LINEAGES,
 } from "../catalog/operations.js";
 import type {
+  DeleteLineageInput,
   GetFieldLineagesOutput,
   GetFieldLineagesScope,
   GetLineagesOutput,
   GetLineagesScope,
   FieldLineageSorting,
   FieldLineageSortingKey,
+  Lineage,
   LineageAssetType,
   LineageSorting,
   LineageSortingKey,
   LineageType,
   Pagination,
+  UpsertLineageInput,
 } from "../generated/types.js";
 import {
   PaginationInputShape,
@@ -291,6 +298,94 @@ export function defineLineageTools(
         );
         const out = data.getFieldLineages;
         return listEnvelope(out.page ?? 0, out.nbPerPage, out.totalCount, out.data);
+      }, client),
+    },
+
+    // ── Mutations ──────────────────────────────────────────────────────────
+
+    {
+      name: "catalog_upsert_lineages",
+      config: {
+        title: "Upsert Asset Lineage Edges",
+        description:
+          "Create or update lineage edges between tables and/or dashboards. Each edge must specify exactly one parent (parentTableId OR parentDashboardId) and exactly one child (childTableId OR childDashboardId). Upserting an existing edge is a no-op.\n\n" +
+          "Edges created through this API register as MANUAL_CUSTOMER lineage type. Use to patch gaps where automatic detection missed a dependency. Batches up to 500 per call; requires a READ_WRITE API token.",
+        inputSchema: {
+          data: z
+            .array(
+              z
+                .object({
+                  parentTableId: z.string().optional(),
+                  parentDashboardId: z.string().optional(),
+                  childTableId: z.string().optional(),
+                  childDashboardId: z.string().optional(),
+                })
+                .refine(
+                  (v) =>
+                    Number(!!v.parentTableId) + Number(!!v.parentDashboardId) === 1 &&
+                    Number(!!v.childTableId) + Number(!!v.childDashboardId) === 1,
+                  {
+                    message:
+                      "Each edge requires exactly one parent (parentTableId XOR parentDashboardId) and exactly one child (childTableId XOR childDashboardId).",
+                  }
+                )
+            )
+            .min(1)
+            .max(500)
+            .describe("Batch of lineage edges to upsert (max 500)."),
+        },
+        annotations: WRITE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input = args.data as UpsertLineageInput[];
+        const data = await c.query<{ upsertLineages: Lineage[] }>(
+          UPSERT_LINEAGES,
+          { data: input }
+        );
+        return { upserted: data.upsertLineages.length, data: data.upsertLineages };
+      }, client),
+    },
+
+    {
+      name: "catalog_delete_lineages",
+      config: {
+        title: "Delete Asset Lineage Edges",
+        description:
+          "Delete lineage edges identified by their endpoints. Same shape as upsert: exactly one parent (parentTableId XOR parentDashboardId) and one child (childTableId XOR childDashboardId) per row. Irreversible — the edge is removed from Catalog.\n\n" +
+          "Use to clean up incorrect automatic lineage or retire stale manual edges. Batches up to 500 per call; requires a READ_WRITE API token.",
+        inputSchema: {
+          data: z
+            .array(
+              z
+                .object({
+                  parentTableId: z.string().optional(),
+                  parentDashboardId: z.string().optional(),
+                  childTableId: z.string().optional(),
+                  childDashboardId: z.string().optional(),
+                })
+                .refine(
+                  (v) =>
+                    Number(!!v.parentTableId) + Number(!!v.parentDashboardId) === 1 &&
+                    Number(!!v.childTableId) + Number(!!v.childDashboardId) === 1,
+                  {
+                    message:
+                      "Each edge requires exactly one parent (parentTableId XOR parentDashboardId) and exactly one child (childTableId XOR childDashboardId).",
+                  }
+                )
+            )
+            .min(1)
+            .max(500)
+            .describe("Batch of lineage edges to delete (max 500)."),
+        },
+        annotations: DESTRUCTIVE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input = args.data as DeleteLineageInput[];
+        const data = await c.query<{ deleteLineages: boolean }>(
+          DELETE_LINEAGES,
+          { data: input }
+        );
+        return { success: data.deleteLineages, deleted: input.length };
       }, client),
     },
   ];
