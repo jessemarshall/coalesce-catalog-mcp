@@ -92,6 +92,34 @@ export function registerCatalogPrompts(server: McpServer): void {
   );
 
   server.registerPrompt(
+    "catalog-governance-rollout",
+    {
+      title: "Catalog: Governance Rollout Walkthrough",
+      description:
+        "Guide a new Catalog user through a phased 'best-in-class' data governance rollout — tiering, ownership, metadata, glossary, tags, lineage, data products, quality, review cadence.",
+    },
+    async () => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text:
+              "Read catalog://context/governance-rollout for the full 8-phase playbook, then have a grounded conversation with the user about where they are today and where to start.\n\n" +
+              "Opening moves:\n" +
+              "  1. Run catalog_search_sources + catalog_search_databases to establish what's actually in the catalog.\n" +
+              "  2. Run catalog_search_tables sortBy:'popularity' sortDirection:'DESC' nbPerPage:25 to surface the top-25 candidates for Tier-1.\n" +
+              "  3. For each of those 25, call catalog_summarize_asset and note: has owner? has description? has lineage? has quality checks?\n" +
+              "  4. Present a short table of gaps. Recommend Phase 0 (ingestion audit) + Phase 1 (ownership assignment) as the first 2 weeks of work.\n\n" +
+              "Do not dump the whole playbook at them. Pull specific phases on demand based on their questions. If they ask 'where do I start with tagging?', jump to Phase 4 and adapt it to what you saw in the catalog. Always ground advice in what actually exists in their account — not abstract principles.\n\n" +
+              "If the user has READ_WRITE access and wants to execute a recommendation (tag, assign owner, push a description), propose the specific catalog_* mutation call and wait for explicit approval before executing.",
+          },
+        },
+      ],
+    })
+  );
+
+  server.registerPrompt(
     "catalog-audit-documentation",
     {
       title: "Catalog: Audit Documentation Coverage",

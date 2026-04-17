@@ -49,6 +49,13 @@ const RESOURCES: ResourceSpec[] = [
       "Step-by-step flow for triaging Catalog-related customer issues (missing lineage, missing descriptions, PII gaps). Usable for Pylon/Slack/Salesforce tickets.",
     file: "context/investigation-playbook.md",
   },
+  {
+    uri: "catalog://context/governance-rollout",
+    name: "Data Governance Rollout Playbook",
+    description:
+      "Opinionated 8-phase method for taking a Catalog from zero to best-in-class governance over 8-12 weeks. Covers tiering, ownership, descriptions, glossary, tagging, lineage, data products, quality checks, and review cadence — each phase tied to the specific catalog_* tools that execute it. Use when the user is new to Catalog or asking 'where do I start?'.",
+    file: "context/governance-rollout.md",
+  },
 ];
 
 function readResource(relativePath: string): string {

@@ -2,6 +2,11 @@
 
 Pick the tool that directly answers the user's question. Don't chain general-purpose searches when a targeted tool exists.
 
+## "Where do I start? / How do I roll this out?"
+
+New Catalog users asking "what do I do first?" should be handed
+the phased playbook at [catalog://context/governance-rollout](catalog://context/governance-rollout) — it covers tiering, ownership, metadata, glossary, tags, lineage, data products, and review cadence across an 8-12 week rollout. The `catalog-governance-rollout` prompt kicks off the walkthrough with live data from their account (top-25 tables, current owner/description coverage, etc.).
+
 ## "I have a warehouse path (DB.SCHEMA.TABLE or DB.SCHEMA.TABLE.COL)"
 
 → `catalog_find_asset_by_path` — always the first call. Returns the UUID you need for everything else.
@@ -34,25 +39,26 @@ The lineage tools return structured edge records (`{ id, direction, parent, chil
 
 ```
 FCT_ORDERS  (coalesce.sample_data.FCT_ORDERS)
-├─↑ WRK_ORDERS                         AUTOMATIC · refreshed 2026-03-15
-├─↓ DIM_CUSTOMER_LOYALTY               AUTOMATIC · refreshed 2026-03-15
-└─↓ V_SALES                            AUTOMATIC · refreshed 2026-03-15
+├─↑ WRK_ORDERS                         refreshed 2026-03-15
+├─↓ DIM_CUSTOMER_LOYALTY               refreshed 2026-03-15
+└─↓ V_SALES                            refreshed 2026-03-15
 ```
 
 Conventions:
 
 - `↑` = upstream (parent → this asset), `↓` = downstream (this asset → child)
-- One line per edge. Columns: asset name, `lineageType`, age or ISO timestamp
+- One line per edge. Columns: asset name, age or ISO timestamp
 - For multi-hop trees from `catalog_explore_lineage` (if you've called it with depth > 1), indent each hop with `│  ` for the continuation and `├─` / `└─` for the last sibling
 - Always call lineage tools with `hydrate: true` when a user is in the loop — skip it for agent-internal multi-step reasoning where IDs are enough
 - If an endpoint returns `hydrationUnavailable: true` (dashboard fields), render as `DASHBOARD_FIELD <uuid>` and note the limitation once at the end of the tree
+- The `lineageType` field (AUTOMATIC / MANUAL_CUSTOMER / MANUAL_OPS / OTHER_TECHNOS) is still present in the raw edge record — omit it from the tree unless the user explicitly asks about provenance, or unless the edge is non-AUTOMATIC (a manual edge on an otherwise auto-detected graph is usually a tell worth surfacing).
 
 For field lineage the same shape applies, with column names in place of tables:
 
 ```
 ORDER_TOTAL  (on FCT_ORDERS)
-├─↑ o_totalprice    (on STG_ORDERS)       AUTOMATIC · refreshed 2025-11-12
-└─↓ total_sales     (on FCT_DAILY_SALES)  AUTOMATIC · refreshed 2026-03-19
+├─↑ o_totalprice    (on STG_ORDERS)       refreshed 2025-11-12
+└─↓ total_sales     (on FCT_DAILY_SALES)  refreshed 2026-03-19
 ```
 
 ## "How is this table used?" (SQL-level)

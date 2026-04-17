@@ -98,7 +98,7 @@ describe("MCP protocol round-trip (no live API)", () => {
       result: { resources: Array<{ uri: string }> };
     };
     client.close();
-    expect(resp.result.resources).toHaveLength(4);
+    expect(resp.result.resources).toHaveLength(5);
     const uris = resp.result.resources.map((r) => r.uri);
     expect(uris).toEqual(
       expect.arrayContaining([
@@ -106,6 +106,7 @@ describe("MCP protocol round-trip (no live API)", () => {
         "catalog://context/tool-routing",
         "catalog://context/ecosystem-boundaries",
         "catalog://context/investigation-playbook",
+        "catalog://context/governance-rollout",
       ])
     );
   }, 10000);
@@ -138,7 +139,7 @@ describe("MCP protocol round-trip (no live API)", () => {
       result: { prompts: Array<{ name: string }> };
     };
     client.close();
-    expect(resp.result.prompts).toHaveLength(5);
+    expect(resp.result.prompts).toHaveLength(6);
     const names = resp.result.prompts.map((p) => p.name);
     expect(names).toEqual(
       expect.arrayContaining([
@@ -147,6 +148,7 @@ describe("MCP protocol round-trip (no live API)", () => {
         "catalog-find-consumers",
         "catalog-investigate-lineage-gaps",
         "catalog-audit-documentation",
+        "catalog-governance-rollout",
       ])
     );
   }, 10000);

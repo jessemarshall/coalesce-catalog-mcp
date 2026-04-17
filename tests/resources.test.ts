@@ -11,6 +11,7 @@ const RESOURCE_FILES = [
   "tool-routing.md",
   "ecosystem-boundaries.md",
   "investigation-playbook.md",
+  "governance-rollout.md",
 ];
 
 describe("resource markdown files", () => {
@@ -49,5 +50,17 @@ describe("resource markdown files", () => {
     );
     expect(contents).toMatch(/transform/i);
     expect(contents).toMatch(/catalog/i);
+  });
+
+  it("governance-rollout covers the 8 rollout phases", () => {
+    const contents = readFileSync(join(srcDir, "governance-rollout.md"), "utf-8");
+    for (let phase = 0; phase <= 8; phase++) {
+      expect(contents).toMatch(new RegExp(`Phase ${phase}`));
+    }
+    // Anchored around the tool surface we actually wrap
+    expect(contents).toContain("catalog_attach_tags");
+    expect(contents).toContain("catalog_upsert_user_owners");
+    expect(contents).toContain("catalog_trace_missing_lineage");
+    expect(contents).toContain("catalog_upsert_data_qualities");
   });
 });
