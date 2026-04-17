@@ -73,7 +73,9 @@ jobs:
             && exit 0 || [ $? -eq 124 ]
 
       - name: Publish to npm
-        run: npm publish --tag ${{ steps.channel.outputs.npm_tag }} --provenance
+        # --access public is required for the first publish of a new package
+        # when --provenance is set (npm defaults new packages to restricted).
+        run: npm publish --tag ${{ steps.channel.outputs.npm_tag }} --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
