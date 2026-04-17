@@ -109,6 +109,73 @@ export const GET_TABLE_DETAIL = /* GraphQL */ `
   }
 `;
 
+// ── Discovery: sources, databases, schemas ───────────────────────────────
+// These three are intentionally flat (no sorting per SDL, no sub-relations)
+// because they're used primarily to resolve IDs for other queries' scope
+// filters. Keep selections compact.
+
+export const GET_SOURCES = /* GraphQL */ `
+  query CatalogGetSources($scope: GetSourcesScope, $pagination: Pagination) {
+    getSources(scope: $scope, pagination: $pagination) {
+      totalCount
+      nbPerPage
+      page
+      data {
+        id
+        name
+        slug
+        type
+        technology
+        origin
+        lastRefreshedAt
+        deletedAt
+        createdAt
+      }
+    }
+  }
+`;
+
+export const GET_DATABASES = /* GraphQL */ `
+  query CatalogGetDatabases($scope: GetDatabasesScope, $pagination: Pagination) {
+    getDatabases(scope: $scope, pagination: $pagination) {
+      totalCount
+      nbPerPage
+      page
+      data {
+        id
+        name
+        externalId
+        slug
+        sourceId
+        description
+        isHidden
+        deletedAt
+        createdAt
+      }
+    }
+  }
+`;
+
+export const GET_SCHEMAS = /* GraphQL */ `
+  query CatalogGetSchemas($scope: GetSchemasScope, $pagination: Pagination) {
+    getSchemas(scope: $scope, pagination: $pagination) {
+      totalCount
+      nbPerPage
+      page
+      data {
+        id
+        name
+        externalId
+        databaseId
+        description
+        isHidden
+        deletedAt
+        createdAt
+      }
+    }
+  }
+`;
+
 const DASHBOARD_SUMMARY_FIELDS = /* GraphQL */ `
   id
   name

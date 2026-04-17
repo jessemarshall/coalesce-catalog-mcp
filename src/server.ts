@@ -6,6 +6,7 @@ import { defineTableTools } from "./mcp/tables.js";
 import { defineLineageTools } from "./mcp/lineage.js";
 import { defineColumnTools } from "./mcp/columns.js";
 import { defineDashboardTools } from "./mcp/dashboards.js";
+import { defineDiscoveryTools } from "./mcp/discovery.js";
 
 export function isReadOnlyMode(): boolean {
   return process.env[READ_ONLY_ENV_VAR] === "true";
@@ -60,6 +61,7 @@ export function createCoalesceCatalogMcpServer(
     ...defineLineageTools(client),
     ...defineColumnTools(client),
     ...defineDashboardTools(client),
+    ...defineDiscoveryTools(client),
   ];
 
   for (const def of definitions) {
