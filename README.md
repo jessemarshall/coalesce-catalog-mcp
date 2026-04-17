@@ -13,7 +13,7 @@ Built as the catalog-side companion to [`coalesce-transform-mcp`](https://www.np
 |     | Task | Jump to |
 | :-: | ---- | ------- |
 | 🚀 | Get running in 2 minutes | [Quick Start](#quick-start) |
-| 🧭 | Roll out Catalog governance from zero | [Governance rollout](#governance-rollout--best-practices) |
+| 🧭 | Roll out Catalog governance from zero | [Governance rollout](#governance-rollout) |
 | 📚 | Understand what context the server ships | [Context Resources](#context-resources) |
 | 🔍 | Find a specific tool | [Tools](#tools) |
 | 💬 | Trigger canned investigation prompts | [Prompts](#prompts) |
@@ -190,7 +190,7 @@ Restart Windsurf. Tools appear under the Cascade chat's MCP panel.
 
 ---
 
-## Governance rollout & best practices
+## Governance rollout
 
 New to Catalog, or rolling it out across an org for the first time? The server ships an opinionated **best-in-class governance playbook** that takes a team from zero to a trusted, governed catalog in 8–12 weeks.
 
@@ -220,7 +220,7 @@ The server ships **5 static markdown resources** under the `catalog://context/*`
 - **`catalog://context/tool-routing`** — Decision tree mapping common user questions to the right tool. Use this if you're unsure whether to reach for `catalog_search_*`, `catalog_get_*`, or a composite workflow.
 - **`catalog://context/ecosystem-boundaries`** — When to pick this server vs `coalesce-transform-mcp`. Explains the workflow seam where Transform-authored nodes materialise Catalog-indexed tables.
 - **`catalog://context/investigation-playbook`** — Step-by-step flow for triaging Catalog-related customer tickets (missing lineage, missing descriptions, PII sweeps).
-- **`catalog://context/governance-rollout`** — Best-in-class rollout playbook. See the [Governance rollout & best practices](#governance-rollout--best-practices) section above for the summary.
+- **`catalog://context/governance-rollout`** — Best-in-class rollout playbook. See the [Governance rollout](#governance-rollout) section above for the summary.
 
 Content lives in [`src/resources/context/`](src/resources/context) — edit the markdown, rebuild, and the server picks it up on restart. There's no per-user override mechanism yet; fork the repo or overlay your own server alongside for org-specific context.
 
@@ -406,7 +406,7 @@ Content lives in [`src/resources/context/`](src/resources/context) — edit the 
 Six reusable prompt templates kick off common workflows without re-reciting the tool chain. Invoke via `prompts/get` in your MCP client (in Claude Code, type `/` and look for the catalog- prefixed entries).
 
 - **`catalog-start-here`** - Orientation: reads `overview` + `tool-routing` context and gives the model the routing defaults it should follow.
-- **`catalog-governance-rollout`** - Kicks off the [governance playbook](#governance-rollout--best-practices) walkthrough grounded in your account's live state (runs source / database / top-25 table sweeps first, then phase-by-phase recommendations).
+- **`catalog-governance-rollout`** - Kicks off the [governance playbook](#governance-rollout) walkthrough grounded in your account's live state (runs source / database / top-25 table sweeps first, then phase-by-phase recommendations).
 - **`catalog-asset-summary`** - Given a path or UUID, run `find_asset_by_path` + `summarize_asset` and present the result.
 - **`catalog-find-consumers`** - Enumerate everything downstream of a table: child tables, dashboards, and SQL queries that read it.
 - **`catalog-investigate-lineage-gaps`** - Run `trace_missing_lineage` and walk each finding with a proposed remediation (upsert_lineages call) — asks for approval before executing.
