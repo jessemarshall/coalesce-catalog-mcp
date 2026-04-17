@@ -185,6 +185,88 @@ export const GET_AI_ASSISTANT_JOB_RESULT = /* GraphQL */ `
 
 // ── Governance: users, teams, quality checks, pinned assets ─────────────
 
+export const UPSERT_USER_OWNERS = /* GraphQL */ `
+  mutation CatalogUpsertUserOwners($data: OwnerInput!) {
+    upsertUserOwners(data: $data) {
+      id
+      userId
+      tableId
+      dashboardId
+      termId
+    }
+  }
+`;
+
+export const REMOVE_USER_OWNERS = /* GraphQL */ `
+  mutation CatalogRemoveUserOwners($data: OwnerInput!) {
+    removeUserOwners(data: $data)
+  }
+`;
+
+export const UPSERT_TEAM_OWNERS = /* GraphQL */ `
+  mutation CatalogUpsertTeamOwners($data: TeamOwnerInput!) {
+    upsertTeamOwners(data: $data) {
+      id
+      teamId
+    }
+  }
+`;
+
+export const REMOVE_TEAM_OWNERS = /* GraphQL */ `
+  mutation CatalogRemoveTeamOwners($data: TeamOwnerInput!) {
+    removeTeamOwners(data: $data)
+  }
+`;
+
+export const UPSERT_TEAM = /* GraphQL */ `
+  mutation CatalogUpsertTeam($data: UpsertTeamInput!) {
+    upsertTeam(data: $data) {
+      id
+      name
+      description
+      email
+      slackChannel
+      slackGroup
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+export const ADD_TEAM_USERS = /* GraphQL */ `
+  mutation CatalogAddTeamUsers($data: TeamUsersInput!) {
+    addTeamUsers(data: $data)
+  }
+`;
+
+export const REMOVE_TEAM_USERS = /* GraphQL */ `
+  mutation CatalogRemoveTeamUsers($data: TeamUsersInput!) {
+    removeTeamUsers(data: $data)
+  }
+`;
+
+export const UPSERT_PINNED_ASSETS = /* GraphQL */ `
+  mutation CatalogUpsertPinnedAssets($data: [EntitiesLinkInput!]!) {
+    upsertPinnedAssets(data: $data) {
+      id
+      fromTableId
+      fromDashboardId
+      fromTermId
+      toTableId
+      toDashboardId
+      toColumnId
+      toDashboardFieldId
+      toTermId
+    }
+  }
+`;
+
+export const REMOVE_PINNED_ASSETS = /* GraphQL */ `
+  mutation CatalogRemovePinnedAssets($data: [EntitiesLinkInput!]!) {
+    removePinnedAssets(data: $data)
+  }
+`;
+
 export const CREATE_EXTERNAL_LINKS = /* GraphQL */ `
   mutation CatalogCreateExternalLinks($data: [CreateExternalLinkInput!]!) {
     createExternalLinks(data: $data) {

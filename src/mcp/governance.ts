@@ -16,12 +16,26 @@ import {
   DELETE_EXTERNAL_LINKS,
   UPSERT_DATA_QUALITIES,
   REMOVE_DATA_QUALITIES,
+  UPSERT_USER_OWNERS,
+  REMOVE_USER_OWNERS,
+  UPSERT_TEAM_OWNERS,
+  REMOVE_TEAM_OWNERS,
+  UPSERT_TEAM,
+  ADD_TEAM_USERS,
+  REMOVE_TEAM_USERS,
+  UPSERT_PINNED_ASSETS,
+  REMOVE_PINNED_ASSETS,
 } from "../catalog/operations.js";
 import type {
   CreateExternalLinkInput,
   DeleteExternalLinkInput,
+  EntitiesLink,
+  EntitiesLinkInput,
   EntitiesLinkSorting,
   EntitiesLinkSortingKey,
+  EntitiesLinkTargetType,
+  EntityTarget,
+  EntityTargetType,
   ExternalLink,
   ExternalLinkTechnology,
   GetEntitiesLinkOutput,
@@ -30,11 +44,18 @@ import type {
   GetQualityChecksScope,
   GetTeamsOutput,
   GetUsersOutput,
+  OwnerEntity,
+  OwnerInput,
   Pagination,
   QualityCheck,
   QualityStatus,
+  Team,
+  TeamOwnerEntity,
+  TeamOwnerInput,
+  TeamUsersInput,
   UpdateExternalLinkInput,
   UpsertQualityChecksInput,
+  UpsertTeamInput,
   RemoveQualityChecksInput,
 } from "../generated/types.js";
 import {
@@ -471,6 +492,342 @@ export function defineGovernanceTools(
           success: data.removeDataQualities,
           removed: input.qualityChecks.length,
         };
+      }, client),
+    },
+
+    // ── Ownership writes ───────────────────────────────────────────────────
+
+    {
+      name: "catalog_upsert_user_owners",
+      config: {
+        title: "Assign User As Owner",
+        description:
+          "Mark a user as owner of one or more target assets (tables, dashboards, terms). Single userId, multiple targetEntities per call. Upserting an existing ownership is a no-op.\n\n" +
+          "Requires READ_WRITE token. Returns the resulting OwnerEntity records.",
+        inputSchema: {
+          userId: z.string().min(1).describe("Catalog UUID of the user."),
+          targetEntities: z
+            .array(
+              z.object({
+                entityType: z.enum(["TABLE", "DASHBOARD", "TERM"]),
+                entityId: z.string().min(1),
+              })
+            )
+            .min(1)
+            .describe("Assets to attribute to this user."),
+        },
+        annotations: WRITE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input: OwnerInput = {
+          userId: args.userId as string,
+          targetEntities: args.targetEntities as EntityTarget[],
+        };
+        const data = await c.query<{ upsertUserOwners: OwnerEntity[] }>(
+          UPSERT_USER_OWNERS,
+          { data: input }
+        );
+        return { upserted: data.upsertUserOwners.length, data: data.upsertUserOwners };
+      }, client),
+    },
+
+    {
+      name: "catalog_remove_user_owners",
+      config: {
+        title: "Remove User Ownership",
+        description:
+          "Strip a user's ownership of specified assets (or of all their assets if targetEntities is omitted). Irreversible within the scope of the removal.",
+        inputSchema: {
+          userId: z.string().min(1).describe("Catalog UUID of the user."),
+          targetEntities: z
+            .array(
+              z.object({
+                entityType: z.enum(["TABLE", "DASHBOARD", "TERM"]),
+                entityId: z.string().min(1),
+              })
+            )
+            .optional()
+            .describe(
+              "Specific assets to strip ownership from. Omit to remove the user from ALL owned assets."
+            ),
+        },
+        annotations: DESTRUCTIVE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input: OwnerInput = {
+          userId: args.userId as string,
+          ...(Array.isArray(args.targetEntities)
+            ? { targetEntities: args.targetEntities as EntityTarget[] }
+            : {}),
+        };
+        const data = await c.query<{ removeUserOwners: boolean }>(
+          REMOVE_USER_OWNERS,
+          { data: input }
+        );
+        return { success: data.removeUserOwners, userId: input.userId };
+      }, client),
+    },
+
+    {
+      name: "catalog_upsert_team_owners",
+      config: {
+        title: "Assign Team As Owner",
+        description:
+          "Mark a team as owner of one or more target assets. Single teamId, multiple targetEntities per call. Upserting an existing ownership is a no-op.",
+        inputSchema: {
+          teamId: z.string().min(1).describe("Catalog UUID of the team."),
+          targetEntities: z
+            .array(
+              z.object({
+                entityType: z.enum(["TABLE", "DASHBOARD", "TERM"]),
+                entityId: z.string().min(1),
+              })
+            )
+            .min(1)
+            .describe("Assets to attribute to this team."),
+        },
+        annotations: WRITE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input: TeamOwnerInput = {
+          teamId: args.teamId as string,
+          targetEntities: args.targetEntities as EntityTarget[],
+        };
+        const data = await c.query<{ upsertTeamOwners: TeamOwnerEntity[] }>(
+          UPSERT_TEAM_OWNERS,
+          { data: input }
+        );
+        return { upserted: data.upsertTeamOwners.length, data: data.upsertTeamOwners };
+      }, client),
+    },
+
+    {
+      name: "catalog_remove_team_owners",
+      config: {
+        title: "Remove Team Ownership",
+        description:
+          "Strip a team's ownership of specified assets (or of all their assets if targetEntities is omitted). Irreversible within the scope of the removal.",
+        inputSchema: {
+          teamId: z.string().min(1).describe("Catalog UUID of the team."),
+          targetEntities: z
+            .array(
+              z.object({
+                entityType: z.enum(["TABLE", "DASHBOARD", "TERM"]),
+                entityId: z.string().min(1),
+              })
+            )
+            .optional()
+            .describe(
+              "Specific assets to strip ownership from. Omit to remove the team from ALL owned assets."
+            ),
+        },
+        annotations: DESTRUCTIVE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input: TeamOwnerInput = {
+          teamId: args.teamId as string,
+          ...(Array.isArray(args.targetEntities)
+            ? { targetEntities: args.targetEntities as EntityTarget[] }
+            : {}),
+        };
+        const data = await c.query<{ removeTeamOwners: boolean }>(
+          REMOVE_TEAM_OWNERS,
+          { data: input }
+        );
+        return { success: data.removeTeamOwners, teamId: input.teamId };
+      }, client),
+    },
+
+    // ── Team management ────────────────────────────────────────────────────
+
+    {
+      name: "catalog_upsert_team",
+      config: {
+        title: "Create or Update Team",
+        description:
+          "Create a team (identified by its unique name) or update an existing one in place. Pass the name you want; if a team with that name already exists it is updated, otherwise one is created. Slack channels must start with '#'; Slack groups must start with '@'.\n\n" +
+          "Single-row mutation (not batched). Requires READ_WRITE token. Returns the resulting team.",
+        inputSchema: {
+          name: z.string().min(1).describe("Unique team name across the account."),
+          description: z.string().optional(),
+          email: z.string().email().optional(),
+          slackChannel: z
+            .string()
+            .startsWith("#")
+            .optional()
+            .describe("Slack channel, must start with '#'."),
+          slackGroup: z
+            .string()
+            .startsWith("@")
+            .optional()
+            .describe("Slack group, must start with '@'."),
+        },
+        annotations: WRITE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input: UpsertTeamInput = { name: args.name as string };
+        if (typeof args.description === "string") input.description = args.description;
+        if (typeof args.email === "string") input.email = args.email;
+        if (typeof args.slackChannel === "string") input.slackChannel = args.slackChannel;
+        if (typeof args.slackGroup === "string") input.slackGroup = args.slackGroup;
+        const data = await c.query<{ upsertTeam: Team }>(UPSERT_TEAM, {
+          data: input,
+        });
+        return { team: data.upsertTeam };
+      }, client),
+    },
+
+    {
+      name: "catalog_add_team_users",
+      config: {
+        title: "Add Users to Team",
+        description:
+          "Add users (by email) to a team. Emails must belong to existing Catalog users. Single-row (one team, many emails). Requires READ_WRITE token.",
+        inputSchema: {
+          id: z.string().min(1).describe("Catalog UUID of the team."),
+          emails: z
+            .array(z.string().email())
+            .min(1)
+            .describe("Emails of users to add to the team."),
+        },
+        annotations: WRITE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input: TeamUsersInput = {
+          id: args.id as string,
+          emails: args.emails as string[],
+        };
+        const data = await c.query<{ addTeamUsers: boolean }>(ADD_TEAM_USERS, {
+          data: input,
+        });
+        return { success: data.addTeamUsers, added: input.emails.length };
+      }, client),
+    },
+
+    {
+      name: "catalog_remove_team_users",
+      config: {
+        title: "Remove Users from Team",
+        description:
+          "Remove users (by email) from a team. Single-row. Requires READ_WRITE token.",
+        inputSchema: {
+          id: z.string().min(1).describe("Catalog UUID of the team."),
+          emails: z
+            .array(z.string().email())
+            .min(1)
+            .describe("Emails of users to remove from the team."),
+        },
+        annotations: DESTRUCTIVE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input: TeamUsersInput = {
+          id: args.id as string,
+          emails: args.emails as string[],
+        };
+        const data = await c.query<{ removeTeamUsers: boolean }>(
+          REMOVE_TEAM_USERS,
+          { data: input }
+        );
+        return { success: data.removeTeamUsers, removed: input.emails.length };
+      }, client),
+    },
+
+    // ── Pinned assets mutations ────────────────────────────────────────────
+
+    {
+      name: "catalog_upsert_pinned_assets",
+      config: {
+        title: "Upsert Pinned Asset Links",
+        description:
+          "Create or refresh pinned-asset relationships — curated 'see also' pointers from one catalog entity to another. Each input row is { from: {id, type}, to: {id, type} } where type is COLUMN | DASHBOARD | DASHBOARD_FIELD | TABLE | TERM.\n\n" +
+          "Batches up to 500. Requires READ_WRITE token.",
+        inputSchema: {
+          data: z
+            .array(
+              z.object({
+                from: z.object({
+                  id: z.string().min(1),
+                  type: z.enum([
+                    "COLUMN",
+                    "DASHBOARD",
+                    "DASHBOARD_FIELD",
+                    "TABLE",
+                    "TERM",
+                  ]),
+                }),
+                to: z.object({
+                  id: z.string().min(1),
+                  type: z.enum([
+                    "COLUMN",
+                    "DASHBOARD",
+                    "DASHBOARD_FIELD",
+                    "TABLE",
+                    "TERM",
+                  ]),
+                }),
+              })
+            )
+            .min(1)
+            .max(500)
+            .describe("Batch of pinned-asset links (max 500)."),
+        },
+        annotations: WRITE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input = args.data as EntitiesLinkInput[];
+        const data = await c.query<{ upsertPinnedAssets: EntitiesLink[] }>(
+          UPSERT_PINNED_ASSETS,
+          { data: input }
+        );
+        return { upserted: data.upsertPinnedAssets.length, data: data.upsertPinnedAssets };
+      }, client),
+    },
+
+    {
+      name: "catalog_remove_pinned_assets",
+      config: {
+        title: "Remove Pinned Asset Links",
+        description:
+          "Remove pinned-asset links identified by endpoints. Same shape as upsert. Irreversible.",
+        inputSchema: {
+          data: z
+            .array(
+              z.object({
+                from: z.object({
+                  id: z.string().min(1),
+                  type: z.enum([
+                    "COLUMN",
+                    "DASHBOARD",
+                    "DASHBOARD_FIELD",
+                    "TABLE",
+                    "TERM",
+                  ]),
+                }),
+                to: z.object({
+                  id: z.string().min(1),
+                  type: z.enum([
+                    "COLUMN",
+                    "DASHBOARD",
+                    "DASHBOARD_FIELD",
+                    "TABLE",
+                    "TERM",
+                  ]),
+                }),
+              })
+            )
+            .min(1)
+            .max(500)
+            .describe("Batch of pinned-asset links to remove (max 500)."),
+        },
+        annotations: DESTRUCTIVE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input = args.data as EntitiesLinkInput[];
+        const data = await c.query<{ removePinnedAssets: boolean }>(
+          REMOVE_PINNED_ASSETS,
+          { data: input }
+        );
+        return { success: data.removePinnedAssets, removed: input.length };
       }, client),
     },
   ];
