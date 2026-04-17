@@ -180,6 +180,50 @@ function buildColumnJoinSorting(
   return [entry];
 }
 
+// ── Predicate-only guard for search_columns ─────────────────────────────────
+// The public API does not index the boolean predicates globally. Callers who
+// pass a predicate (isPii/isPrimaryKey/isDocumented/hasColumnJoins) with no
+// scoping filter trigger a full-table scan and time out after ~30s. We reject
+// those calls up-front with an actionable message so the model can retry with
+// a scope instead of hanging the session.
+const PREDICATE_FIELDS = [
+  "isPii",
+  "isPrimaryKey",
+  "isDocumented",
+  "hasColumnJoins",
+] as const;
+
+const SCOPE_FIELDS = [
+  "ids",
+  "nameContains",
+  "name",
+  "description",
+  "tableId",
+  "tableIds",
+  "schemaId",
+  "schemaIds",
+  "databaseId",
+  "databaseIds",
+  "sourceId",
+  "sourceIds",
+] as const;
+
+function assertSearchColumnsHasScope(input: Record<string, unknown>): void {
+  const hasPredicate = PREDICATE_FIELDS.some(
+    (k) => typeof input[k] === "boolean"
+  );
+  if (!hasPredicate) return;
+  const hasScope = SCOPE_FIELDS.some((k) => input[k] !== undefined);
+  if (!hasScope) {
+    throw new Error(
+      "Unscoped predicate-only catalog_search_columns queries time out on the Catalog API (~30s). " +
+        "Add at least one of: tableId / tableIds, schemaId / schemaIds, databaseId / databaseIds, " +
+        "sourceId / sourceIds, ids, nameContains, name, or description — alongside your isPii / " +
+        "isPrimaryKey / isDocumented / hasColumnJoins filter."
+    );
+  }
+}
+
 function buildColumnJoinsScope(
   input: Record<string, unknown>
 ): GetColumnJoinsScope | undefined {
@@ -204,11 +248,13 @@ export function defineColumnTools(
         title: "Search Catalog Columns",
         description:
           "Find warehouse/BI columns indexed in the Coalesce Catalog. Supports substring search on name, filters by table/schema/database/source, and boolean predicates for PII/primary-key/documented/has-joins status. Returns a compact summary (id, name, type, description, flags) per match.\n\n" +
-          "Use for: finding all columns on a table, sweeping for undocumented or PII-flagged columns across a schema, or verifying primary-key coverage. Use catalog_get_column for full detail on a single column.",
+          "Use for: finding all columns on a table, sweeping for undocumented or PII-flagged columns across a schema, or verifying primary-key coverage. Use catalog_get_column for full detail on a single column.\n\n" +
+          "Note: boolean predicates (isPii / isPrimaryKey / isDocumented / hasColumnJoins) are not globally indexed — always combine them with a scope filter (tableId, schemaId, databaseId, sourceId, or nameContains). The tool rejects predicate-only calls up-front rather than letting them time out.",
         inputSchema: SearchColumnsInputShape,
         annotations: READ_ONLY_ANNOTATIONS,
       },
       handler: withErrorHandling(async (args, c) => {
+        assertSearchColumnsHasScope(args);
         const pagination = toGraphQLPagination(args as PaginationInput);
         const variables = {
           scope: buildColumnsScope(args),

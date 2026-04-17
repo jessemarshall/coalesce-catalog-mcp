@@ -69,6 +69,102 @@ import {
 } from "../schemas/sorting.js";
 import { listEnvelope, withErrorHandling } from "./tool-helpers.js";
 
+// ── Payload shaping for search_users / search_teams ─────────────────────────
+// The public API inlines ownedAssetIds (and memberIds for teams) as
+// unbounded UUID arrays on every user/team record. A single ADMIN user in a
+// mature workspace can return ~500 IDs, inflating list payloads to 20 KB per
+// row. We strip the arrays in list queries and expose them via dedicated
+// paginated lookup tools instead.
+
+type TrimmedUser = Omit<GetUsersOutput, "ownedAssetIds"> & {
+  ownedAssetCount: number;
+};
+
+type TrimmedTeam = Omit<GetTeamsOutput, "memberIds" | "ownedAssetIds"> & {
+  memberCount: number;
+  ownedAssetCount: number;
+};
+
+function stripUserOwnedAssets(user: GetUsersOutput): TrimmedUser {
+  const { ownedAssetIds, ...rest } = user;
+  return { ...rest, ownedAssetCount: ownedAssetIds?.length ?? 0 };
+}
+
+function stripTeamArrays(team: GetTeamsOutput): TrimmedTeam {
+  const { memberIds, ownedAssetIds, ...rest } = team;
+  return {
+    ...rest,
+    memberCount: memberIds?.length ?? 0,
+    ownedAssetCount: ownedAssetIds?.length ?? 0,
+  };
+}
+
+// ── Find-by-id helpers for the dedicated lookup tools ───────────────────────
+// The public API has no user-by-id or team-by-id endpoint. The dedicated
+// lookup tools (catalog_get_user_owned_assets etc.) iterate pages until the
+// target is found or the cap is hit.
+const LOOKUP_PAGE_SIZE = 500;
+const LOOKUP_MAX_PAGES = 20;
+
+async function findUserById(
+  client: CatalogClient,
+  userId: string
+): Promise<GetUsersOutput | null> {
+  for (let page = 0; page < LOOKUP_MAX_PAGES; page++) {
+    const data = await client.query<{ getUsers: GetUsersOutput[] }>(
+      GET_USERS,
+      { pagination: { nbPerPage: LOOKUP_PAGE_SIZE, page } }
+    );
+    const match = data.getUsers.find((u) => u.id === userId);
+    if (match) return match;
+    if (data.getUsers.length < LOOKUP_PAGE_SIZE) return null;
+  }
+  return null;
+}
+
+async function findTeamById(
+  client: CatalogClient,
+  teamId: string
+): Promise<GetTeamsOutput | null> {
+  for (let page = 0; page < LOOKUP_MAX_PAGES; page++) {
+    const data = await client.query<{ getTeams: GetTeamsOutput[] }>(
+      GET_TEAMS,
+      { pagination: { nbPerPage: LOOKUP_PAGE_SIZE, page } }
+    );
+    const match = data.getTeams.find((t) => t.id === teamId);
+    if (match) return match;
+    if (data.getTeams.length < LOOKUP_PAGE_SIZE) return null;
+  }
+  return null;
+}
+
+function sliceAssetIds(
+  ids: readonly string[] | undefined,
+  page: number,
+  nbPerPage: number
+): {
+  pagination: {
+    page: number;
+    nbPerPage: number;
+    totalCount: number;
+    hasMore: boolean;
+  };
+  data: string[];
+} {
+  const all = ids ?? [];
+  const start = page * nbPerPage;
+  const slice = all.slice(start, start + nbPerPage);
+  return {
+    pagination: {
+      page,
+      nbPerPage,
+      totalCount: all.length,
+      hasMore: start + slice.length < all.length,
+    },
+    data: slice,
+  };
+}
+
 // ── Users ───────────────────────────────────────────────────────────────────
 
 const SearchUsersInputShape = {
@@ -196,7 +292,8 @@ export function defineGovernanceTools(
       config: {
         title: "List Catalog Users",
         description:
-          "List Catalog users (humans). Returns identity (id, email, firstName, lastName), role, email-validation status, and ownedAssetIds (the UUIDs of every asset this user owns, useful for stewardship queries). The API returns a flat array — no totalCount/hasMore metadata.",
+          "List Catalog users (humans). Returns identity (id, email, firstName, lastName), role, email-validation status, and `ownedAssetCount` — a scalar count of assets this user owns.\n\n" +
+          "For the full list of owned asset UUIDs, call catalog_get_user_owned_assets(userId). The count was substituted for the raw UUID array to keep list responses small on accounts with senior admins who own hundreds of assets — a ~500-asset ADMIN could otherwise inflate a single user row to 20 KB.",
         inputSchema: SearchUsersInputShape,
         annotations: READ_ONLY_ANNOTATIONS,
       },
@@ -212,7 +309,7 @@ export function defineGovernanceTools(
             nbPerPage: pagination.nbPerPage,
             returned: data.getUsers.length,
           },
-          data: data.getUsers,
+          data: data.getUsers.map(stripUserOwnedAssets),
         };
       }, client),
     },
@@ -222,7 +319,8 @@ export function defineGovernanceTools(
       config: {
         title: "List Catalog Teams",
         description:
-          "List Catalog teams (groups). Returns identity (id, name, description, email), Slack routing (slackChannel, slackGroup), memberIds (user UUIDs), and ownedAssetIds. The API returns a flat array — no totalCount/hasMore metadata.",
+          "List Catalog teams (groups). Returns identity (id, name, description, email), Slack routing (slackChannel, slackGroup), `memberCount`, and `ownedAssetCount`.\n\n" +
+          "For the full list of member UUIDs, call catalog_get_team_members(teamId). For the full list of owned asset UUIDs, call catalog_get_team_owned_assets(teamId). The counts were substituted for the raw UUID arrays to keep list responses small — a team of 30 people owning 200 assets would otherwise inflate a single team row.",
         inputSchema: SearchTeamsInputShape,
         annotations: READ_ONLY_ANNOTATIONS,
       },
@@ -238,8 +336,103 @@ export function defineGovernanceTools(
             nbPerPage: pagination.nbPerPage,
             returned: data.getTeams.length,
           },
-          data: data.getTeams,
+          data: data.getTeams.map(stripTeamArrays),
         };
+      }, client),
+    },
+
+    {
+      name: "catalog_get_user_owned_assets",
+      config: {
+        title: "Get Paginated Owned Assets For a User",
+        description:
+          "Return the paginated list of asset UUIDs owned by a given user. Pair with catalog_search_users (which only exposes `ownedAssetCount`) when you need the full list — e.g. 'list every table Zach owns'.\n\n" +
+          "Implementation note: the public API has no direct user-by-id endpoint, so this tool iterates `getUsers` pages of 500 until it finds the target. The cap is 10k users (20 pages); beyond that it returns notFound with a hint. The returned IDs are heterogeneous (tables, dashboards, terms) — hydrate via catalog_get_table / catalog_get_dashboard / catalog_search_terms{ids} as needed.",
+        inputSchema: {
+          userId: z.string().min(1).describe("Catalog UUID of the user."),
+          ...PaginationInputShape,
+        },
+        annotations: READ_ONLY_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const pagination = toGraphQLPagination(args as PaginationInput);
+        const user = await findUserById(c, args.userId as string);
+        if (!user) {
+          return {
+            notFound: true,
+            userId: args.userId,
+            reason:
+              "User not found within the first 10,000 accounts scanned. The API has no per-id lookup, so this tool may miss very large tenants — narrow via catalog_search_users if needed.",
+          };
+        }
+        return sliceAssetIds(
+          user.ownedAssetIds,
+          pagination.page,
+          pagination.nbPerPage
+        );
+      }, client),
+    },
+
+    {
+      name: "catalog_get_team_members",
+      config: {
+        title: "Get Paginated Members For a Team",
+        description:
+          "Return the paginated list of user UUIDs belonging to a team. Pair with catalog_search_teams (which only exposes `memberCount`) when you need the full membership.\n\n" +
+          "Same iteration strategy as catalog_get_user_owned_assets — scans up to 10k teams.",
+        inputSchema: {
+          teamId: z.string().min(1).describe("Catalog UUID of the team."),
+          ...PaginationInputShape,
+        },
+        annotations: READ_ONLY_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const pagination = toGraphQLPagination(args as PaginationInput);
+        const team = await findTeamById(c, args.teamId as string);
+        if (!team) {
+          return {
+            notFound: true,
+            teamId: args.teamId,
+            reason:
+              "Team not found within the first 10,000 accounts scanned.",
+          };
+        }
+        return sliceAssetIds(
+          team.memberIds,
+          pagination.page,
+          pagination.nbPerPage
+        );
+      }, client),
+    },
+
+    {
+      name: "catalog_get_team_owned_assets",
+      config: {
+        title: "Get Paginated Owned Assets For a Team",
+        description:
+          "Return the paginated list of asset UUIDs owned by a given team. Pair with catalog_search_teams (which only exposes `ownedAssetCount`). Same iteration strategy as catalog_get_user_owned_assets.",
+        inputSchema: {
+          teamId: z.string().min(1).describe("Catalog UUID of the team."),
+          ...PaginationInputShape,
+        },
+        annotations: READ_ONLY_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const pagination = toGraphQLPagination(args as PaginationInput);
+        const team = await findTeamById(c, args.teamId as string);
+        if (!team) {
+          return {
+            notFound: true,
+            teamId: args.teamId,
+            reason:
+              "Team not found within the first 10,000 accounts scanned.",
+          };
+        }
+        return sliceAssetIds(
+          team.ownedAssetIds,
+          pagination.page,
+          pagination.nbPerPage
+        );
       }, client),
     },
 

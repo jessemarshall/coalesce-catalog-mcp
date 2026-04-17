@@ -82,18 +82,23 @@ async function listTools(env: Record<string, string>): Promise<string[]> {
 }
 
 describe("COALESCE_CATALOG_READ_ONLY", () => {
-  it("normal mode registers 49 tools", async () => {
+  it("normal mode registers 52 tools", async () => {
     const names = await listTools({ COALESCE_CATALOG_API_KEY: "dummy" });
-    expect(names).toHaveLength(49);
+    expect(names).toHaveLength(52);
   }, 10000);
 
-  it("read-only mode registers only 26 tools (all reads)", async () => {
+  it("read-only mode registers only 29 tools (all reads)", async () => {
     const names = await listTools({
       COALESCE_CATALOG_API_KEY: "dummy",
       COALESCE_CATALOG_READ_ONLY: "true",
     });
-    expect(names).toHaveLength(26);
-    // No write/destructive tool names leak through
+    expect(names).toHaveLength(29);
+    // No write/destructive tool names leak through.
+    // Note: `add` is excluded from the forbidden list because the schema
+    // exposes `add_team_users` as a write, but we also have read tools
+    // whose names start with get_ / search_ / find_ only — no read tool
+    // begins with `add`. `get_user_owned_assets` etc. are reads and keep
+    // working, since they don't match any write prefix.
     const forbiddenPrefixes = ["attach", "detach", "update", "create", "upsert", "delete", "remove", "add"];
     for (const name of names) {
       const trimmed = name.replace(/^catalog_/, "");
