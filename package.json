@@ -1,0 +1,54 @@
+{
+  "name": "coalesce-catalog-mcp",
+  "version": "0.1.0",
+  "mcpName": "io.github.jessemarshall/coalesce-catalog",
+  "description": "MCP server for the Coalesce Catalog Public GraphQL API; covers tables, columns, dashboards, lineage, governance, and asset metadata across the warehouse and BI layer.",
+  "main": "dist/index.js",
+  "bin": {
+    "coalesce-catalog-mcp": "./dist/index.js"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "postbuild": "chmod +x dist/index.js",
+    "dev": "tsc --watch",
+    "codegen": "node scripts/codegen.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "preversion": "npm run build && npm audit --omit=dev",
+    "version": "node scripts/sync-version.mjs && git add server.json README.md",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "coalesce",
+    "catalog",
+    "castor",
+    "data-catalog",
+    "lineage",
+    "graphql",
+    "model-context-protocol"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jessemarshall/coalesce-catalog-mcp.git"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.1.0"
+  }
+}
