@@ -324,6 +324,48 @@ export const GET_PINNED_ASSETS = /* GraphQL */ `
 
 // ── Tags, terms, data products ───────────────────────────────────────────
 
+export const CREATE_TERM = /* GraphQL */ `
+  mutation CatalogCreateTerm($data: CreateTermInput!) {
+    createTerm(data: $data) {
+      id
+      name
+      description
+      parentTermId
+      isVerified
+      isDeprecated
+      createdAt
+      linkedTag {
+        id
+        label
+      }
+    }
+  }
+`;
+
+export const UPDATE_TERM = /* GraphQL */ `
+  mutation CatalogUpdateTerm($data: UpdateTermInput!) {
+    updateTerm(data: $data) {
+      id
+      name
+      description
+      parentTermId
+      isVerified
+      isDeprecated
+      updatedAt
+      linkedTag {
+        id
+        label
+      }
+    }
+  }
+`;
+
+export const DELETE_TERM = /* GraphQL */ `
+  mutation CatalogDeleteTerm($data: DeleteTermInput!) {
+    deleteTerm(data: $data)
+  }
+`;
+
 export const ATTACH_TAGS = /* GraphQL */ `
   mutation CatalogAttachTags($data: [BaseTagEntityInput!]!) {
     attachTags(data: $data)

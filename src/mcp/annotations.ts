@@ -12,11 +12,16 @@ import {
   GET_DATA_PRODUCTS,
   ATTACH_TAGS,
   DETACH_TAGS,
+  CREATE_TERM,
+  UPDATE_TERM,
+  DELETE_TERM,
 } from "../catalog/operations.js";
 import type {
   BaseTagEntityInput,
+  CreateTermInput,
   DataProductSorting,
   DataProductSortingKey,
+  DeleteTermInput,
   EntityTargetType,
   GetDataProductOutput,
   GetDataProductScope,
@@ -28,8 +33,10 @@ import type {
   TagEntityType,
   TagSorting,
   TagSortingKey,
+  Term,
   TermSorting,
   TermSortingKey,
+  UpdateTermInput,
 } from "../generated/types.js";
 import {
   PaginationInputShape,
@@ -352,6 +359,112 @@ export function defineAnnotationTools(
           data: input satisfies BaseTagEntityInput[],
         });
         return { success: data.detachTags, detached: input.length };
+      }, client),
+    },
+
+    // ── Term CRUD ──────────────────────────────────────────────────────────
+
+    {
+      name: "catalog_create_term",
+      config: {
+        title: "Create Glossary Term",
+        description:
+          "Create a new glossary term. Single-row (not batched) — mirroring the API. Required: name + description (supports markdown). Optional: parentTermId to nest it beneath another term (omit for a root-level term), linkedTagId to associate with a tag so tagged entities inherit the term's context.\n\n" +
+          "Requires READ_WRITE token. Returns the full created term.",
+        inputSchema: {
+          name: z.string().min(1).describe("Term name."),
+          description: z
+            .string()
+            .min(1)
+            .describe("Markdown-supported description of the term."),
+          parentTermId: z
+            .string()
+            .optional()
+            .describe("UUID of the parent term; omit to create at the root."),
+          linkedTagId: z
+            .string()
+            .optional()
+            .describe("UUID of a tag to link 1:1 with this term."),
+        },
+        annotations: WRITE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input: CreateTermInput = {
+          name: args.name as string,
+          description: args.description as string,
+          ...(typeof args.parentTermId === "string"
+            ? { parentTermId: args.parentTermId }
+            : {}),
+          ...(typeof args.linkedTagId === "string"
+            ? { linkedTagId: args.linkedTagId }
+            : {}),
+        };
+        const data = await c.query<{ createTerm: Term }>(CREATE_TERM, {
+          data: input,
+        });
+        return { term: data.createTerm };
+      }, client),
+    },
+
+    {
+      name: "catalog_update_term",
+      config: {
+        title: "Update Glossary Term",
+        description:
+          "Update a term by id. All fields except id are optional. To detach a linked tag pass linkedTagId: null; to move to the root pass parentTermId: null. Single-row (not batched).\n\n" +
+          "Requires READ_WRITE token. Returns the updated term.",
+        inputSchema: {
+          id: z.string().min(1).describe("Catalog UUID of the term."),
+          name: z.string().optional(),
+          description: z.string().optional(),
+          parentTermId: z
+            .string()
+            .nullable()
+            .optional()
+            .describe("Set to null to move to root, or a UUID to re-parent."),
+          linkedTagId: z
+            .string()
+            .nullable()
+            .optional()
+            .describe("Set to null to unlink, or a UUID to link a tag."),
+        },
+        annotations: WRITE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input: UpdateTermInput = { id: args.id as string };
+        if (typeof args.name === "string") input.name = args.name;
+        if (typeof args.description === "string") input.description = args.description;
+        if (args.parentTermId !== undefined) {
+          input.parentTermId = args.parentTermId as string | null;
+        }
+        if (args.linkedTagId !== undefined) {
+          input.linkedTagId = args.linkedTagId as string | null;
+        }
+        const data = await c.query<{ updateTerm: Term }>(UPDATE_TERM, {
+          data: input,
+        });
+        return { term: data.updateTerm };
+      }, client),
+    },
+
+    {
+      name: "catalog_delete_term",
+      config: {
+        title: "Delete Glossary Term",
+        description:
+          "Delete a term by id. Irreversible. Child terms become orphaned (their parentTermId still points at a now-deleted term). Single-row (not batched).\n\n" +
+          "Requires READ_WRITE token. Returns a boolean success flag.",
+        inputSchema: {
+          id: z.string().min(1).describe("Catalog UUID of the term to delete."),
+        },
+        annotations: DESTRUCTIVE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input: DeleteTermInput = { id: args.id as string };
+        const data = await c.query<{ deleteTerm: boolean }>(DELETE_TERM, {
+          data: input,
+        });
+        return { success: data.deleteTerm, id: input.id };
       }, client),
     },
   ];
