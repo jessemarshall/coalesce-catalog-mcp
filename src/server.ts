@@ -11,6 +11,7 @@ import { defineAnnotationTools } from "./mcp/annotations.js";
 import { defineGovernanceTools } from "./mcp/governance.js";
 import { defineAiTools } from "./mcp/ai.js";
 import { defineFindAssetByPath } from "./workflows/find-asset-by-path.js";
+import { defineSummarizeAsset } from "./workflows/summarize-asset.js";
 
 export function isReadOnlyMode(): boolean {
   return process.env[READ_ONLY_ENV_VAR] === "true";
@@ -70,6 +71,7 @@ export function createCoalesceCatalogMcpServer(
     ...defineGovernanceTools(client),
     ...defineAiTools(client),
     defineFindAssetByPath(client),
+    defineSummarizeAsset(client),
   ];
 
   for (const def of definitions) {
