@@ -109,6 +109,89 @@ export const GET_TABLE_DETAIL = /* GraphQL */ `
   }
 `;
 
+// ── Tags, terms, data products ───────────────────────────────────────────
+
+export const GET_TAGS = /* GraphQL */ `
+  query CatalogGetTags(
+    $scope: GetTagsScope
+    $sorting: [TagSorting!]
+    $pagination: Pagination
+  ) {
+    getTags(scope: $scope, sorting: $sorting, pagination: $pagination) {
+      totalCount
+      nbPerPage
+      page
+      data {
+        id
+        label
+        color
+        slug
+        linkedTermId
+        createdAt
+        updatedAt
+      }
+    }
+  }
+`;
+
+export const GET_TERMS = /* GraphQL */ `
+  query CatalogGetTerms(
+    $scope: GetTermsScope
+    $sorting: [TermSorting!]
+    $pagination: Pagination
+  ) {
+    getTerms(scope: $scope, sorting: $sorting, pagination: $pagination) {
+      totalCount
+      nbPerPage
+      page
+      data {
+        id
+        name
+        description
+        externalId
+        icon
+        parentTermId
+        depthLevel
+        isVerified
+        isDeprecated
+        isDescriptionGenerated
+        slug
+        createdAt
+        updatedAt
+        lastEditedAt
+        deletedAt
+        deprecatedAt
+        linkedTag {
+          id
+          label
+          color
+        }
+      }
+    }
+  }
+`;
+
+export const GET_DATA_PRODUCTS = /* GraphQL */ `
+  query CatalogGetDataProducts(
+    $scope: GetDataProductScope
+    $sorting: [DataProductSorting!]
+    $pagination: Pagination
+  ) {
+    getDataProducts(scope: $scope, sorting: $sorting, pagination: $pagination) {
+      totalCount
+      nbPerPage
+      page
+      data {
+        id
+        coverUrl
+        tableId
+        dashboardId
+        termId
+      }
+    }
+  }
+`;
+
 // ── Discovery: sources, databases, schemas ───────────────────────────────
 // These three are intentionally flat (no sorting per SDL, no sub-relations)
 // because they're used primarily to resolve IDs for other queries' scope
