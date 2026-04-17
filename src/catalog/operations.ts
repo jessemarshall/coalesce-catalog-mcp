@@ -109,6 +109,95 @@ export const GET_TABLE_DETAIL = /* GraphQL */ `
   }
 `;
 
+// ── Governance: users, teams, quality checks, pinned assets ─────────────
+
+export const GET_USERS = /* GraphQL */ `
+  query CatalogGetUsers($pagination: Pagination) {
+    getUsers(pagination: $pagination) {
+      id
+      firstName
+      lastName
+      email
+      role
+      status
+      isEmailValidated
+      createdAt
+      ownedAssetIds
+    }
+  }
+`;
+
+export const GET_TEAMS = /* GraphQL */ `
+  query CatalogGetTeams($pagination: Pagination) {
+    getTeams(pagination: $pagination) {
+      id
+      name
+      description
+      email
+      slackChannel
+      slackGroup
+      memberIds
+      ownedAssetIds
+      createdAt
+    }
+  }
+`;
+
+export const GET_DATA_QUALITIES = /* GraphQL */ `
+  query CatalogGetDataQualities(
+    $scope: GetQualityChecksScope
+    $pagination: Pagination
+  ) {
+    getDataQualities(scope: $scope, pagination: $pagination) {
+      totalCount
+      nbPerPage
+      page
+      data {
+        id
+        name
+        description
+        externalId
+        tableId
+        columnId
+        status
+        result
+        source
+        ownerEmail
+        url
+        runAt
+        createdAt
+      }
+    }
+  }
+`;
+
+export const GET_PINNED_ASSETS = /* GraphQL */ `
+  query CatalogGetPinnedAssets(
+    $scope: GetEntitiesLinksScope
+    $sorting: [EntitiesLinkSorting!]
+    $pagination: Pagination
+  ) {
+    getPinnedAssets(scope: $scope, sorting: $sorting, pagination: $pagination) {
+      totalCount
+      nbPerPage
+      page
+      data {
+        id
+        fromTableId
+        fromDashboardId
+        fromTermId
+        toTableId
+        toDashboardId
+        toDashboardFieldId
+        toColumnId
+        toTermId
+        createdAt
+        updatedAt
+      }
+    }
+  }
+`;
+
 // ── Tags, terms, data products ───────────────────────────────────────────
 
 export const GET_TAGS = /* GraphQL */ `
