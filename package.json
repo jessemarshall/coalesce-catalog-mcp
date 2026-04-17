@@ -43,6 +43,11 @@
     "type": "git",
     "url": "https://github.com/jessemarshall/coalesce-catalog-mcp.git"
   },
+  "bugs": {
+    "url": "https://github.com/jessemarshall/coalesce-catalog-mcp/issues"
+  },
+  "homepage": "https://github.com/jessemarshall/coalesce-catalog-mcp#readme",
+  "author": "Jesse Marshall",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
