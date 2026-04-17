@@ -10,6 +10,7 @@ import { defineDiscoveryTools } from "./mcp/discovery.js";
 import { defineAnnotationTools } from "./mcp/annotations.js";
 import { defineGovernanceTools } from "./mcp/governance.js";
 import { defineAiTools } from "./mcp/ai.js";
+import { defineFindAssetByPath } from "./workflows/find-asset-by-path.js";
 
 export function isReadOnlyMode(): boolean {
   return process.env[READ_ONLY_ENV_VAR] === "true";
@@ -68,6 +69,7 @@ export function createCoalesceCatalogMcpServer(
     ...defineAnnotationTools(client),
     ...defineGovernanceTools(client),
     ...defineAiTools(client),
+    defineFindAssetByPath(client),
   ];
 
   for (const def of definitions) {
