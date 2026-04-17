@@ -109,6 +109,54 @@ export const GET_TABLE_DETAIL = /* GraphQL */ `
   }
 `;
 
+// ── AI: semantic query search + assistant ───────────────────────────────
+
+export const SEARCH_QUERIES = /* GraphQL */ `
+  query CatalogSearchQueries(
+    $data: SearchQueriesInput!
+    $scope: SearchQueriesScope
+  ) {
+    searchQueries(data: $data, scope: $scope) {
+      data {
+        query
+        tableIds
+        author {
+          name
+          email
+        }
+      }
+    }
+  }
+`;
+
+export const ADD_AI_ASSISTANT_JOB = /* GraphQL */ `
+  query CatalogAddAiAssistantJob($data: AddAiAssistantJobInput!) {
+    addAiAssistantJob(data: $data) {
+      data {
+        id
+        jobId
+      }
+    }
+  }
+`;
+
+export const GET_AI_ASSISTANT_JOB_RESULT = /* GraphQL */ `
+  query CatalogGetAiAssistantJobResult($data: JobResultInput!) {
+    getAiAssistantJobResult(data: $data) {
+      data {
+        status
+        answer
+        assets {
+          id
+          name
+          url
+          internalLink
+        }
+      }
+    }
+  }
+`;
+
 // ── Governance: users, teams, quality checks, pinned assets ─────────────
 
 export const GET_USERS = /* GraphQL */ `

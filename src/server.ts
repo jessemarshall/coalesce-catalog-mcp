@@ -9,6 +9,7 @@ import { defineDashboardTools } from "./mcp/dashboards.js";
 import { defineDiscoveryTools } from "./mcp/discovery.js";
 import { defineAnnotationTools } from "./mcp/annotations.js";
 import { defineGovernanceTools } from "./mcp/governance.js";
+import { defineAiTools } from "./mcp/ai.js";
 
 export function isReadOnlyMode(): boolean {
   return process.env[READ_ONLY_ENV_VAR] === "true";
@@ -66,6 +67,7 @@ export function createCoalesceCatalogMcpServer(
     ...defineDiscoveryTools(client),
     ...defineAnnotationTools(client),
     ...defineGovernanceTools(client),
+    ...defineAiTools(client),
   ];
 
   for (const def of definitions) {
