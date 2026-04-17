@@ -41,7 +41,7 @@ interface Finding {
   recommendation?: string;
 }
 
-function dominantLineageType(
+export function dominantLineageType(
   rows: Array<{ lineageType?: LineageType | null | undefined }>
 ): LineageType | null {
   const counts = new Map<LineageType, number>();

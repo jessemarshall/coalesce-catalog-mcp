@@ -27,7 +27,7 @@ interface NamedRow {
  * Split a dotted warehouse path into components, trimming whitespace and
  * unwrapping common identifier quoting (double quotes, backticks).
  */
-function parsePath(path: string): string[] {
+export function parsePath(path: string): string[] {
   const parts: string[] = [];
   let current = "";
   let i = 0;
