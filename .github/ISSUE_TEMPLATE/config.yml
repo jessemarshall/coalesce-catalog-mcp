@@ -1,8 +1,5 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Security vulnerability
-    url: https://github.com/jessemarshall/coalesce-catalog-mcp/security/advisories/new
-    about: Please report security issues privately via GitHub Security Advisories, not as a public issue.
   - name: Question about the Coalesce Catalog API itself
     url: https://docs.coalesce.io/docs/catalog
     about: For questions about the Castor Public GraphQL API behaviour (not this MCP wrapper), start at the product docs.
