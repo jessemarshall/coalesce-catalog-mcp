@@ -2,14 +2,17 @@ import { z } from "zod";
 import type { CatalogClient } from "../client.js";
 import {
   READ_ONLY_ANNOTATIONS,
+  WRITE_ANNOTATIONS,
   type CatalogToolDefinition,
 } from "../catalog/types.js";
 import {
   GET_COLUMNS_SUMMARY,
   GET_COLUMN_DETAIL,
   GET_COLUMN_JOINS,
+  UPDATE_COLUMNS_METADATA,
 } from "../catalog/operations.js";
 import type {
+  Column,
   ColumnSorting,
   ColumnSortingKey,
   ColumnJoinSorting,
@@ -19,6 +22,7 @@ import type {
   GetColumnJoinsOutput,
   GetColumnJoinsScope,
   Pagination,
+  UpdateColumnsMetadataInput,
 } from "../generated/types.js";
 import {
   PaginationInputShape,
@@ -272,6 +276,59 @@ export function defineColumnTools(
         );
         const out = data.getColumnJoins;
         return listEnvelope(out.page ?? 0, out.nbPerPage, out.totalCount, out.data);
+      }, client),
+    },
+
+    // ── Mutations ──────────────────────────────────────────────────────────
+
+    {
+      name: "catalog_update_column_metadata",
+      config: {
+        title: "Update Column Metadata",
+        description:
+          "Update descriptive metadata on one or more columns. Supports both `descriptionRaw` (Catalog-native markdown documentation) and `externalDescription` (source-pushed documentation), plus the boolean `isPii` and `isPrimaryKey` flags. Accepts a batch (max 500 items per call); each item must include `id`.\n\n" +
+          "Requires a READ_WRITE API token. Returns the updated rows with both description fields + flags resolved.",
+        inputSchema: {
+          data: z
+            .array(
+              z.object({
+                id: z.string().min(1).describe("Catalog UUID of the column."),
+                descriptionRaw: z
+                  .string()
+                  .optional()
+                  .describe(
+                    "Catalog-native user documentation (markdown). Takes precedence over externalDescription in the computed `description` field."
+                  ),
+                externalDescription: z
+                  .string()
+                  .optional()
+                  .describe("Source-system description."),
+                isPii: z
+                  .boolean()
+                  .optional()
+                  .describe("Mark the column as personally identifiable information."),
+                isPrimaryKey: z
+                  .boolean()
+                  .optional()
+                  .describe("Mark the column as a primary key."),
+              })
+            )
+            .min(1)
+            .max(500)
+            .describe("Batch of column metadata updates (max 500)."),
+        },
+        annotations: WRITE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input = args.data as UpdateColumnsMetadataInput[];
+        const data = await c.query<{ updateColumnsMetadata: Column[] }>(
+          UPDATE_COLUMNS_METADATA,
+          { data: input }
+        );
+        return {
+          updated: data.updateColumnsMetadata.length,
+          data: data.updateColumnsMetadata,
+        };
       }, client),
     },
   ];

@@ -2,12 +2,14 @@ import { z } from "zod";
 import type { CatalogClient } from "../client.js";
 import {
   READ_ONLY_ANNOTATIONS,
+  WRITE_ANNOTATIONS,
   type CatalogToolDefinition,
 } from "../catalog/types.js";
 import {
   GET_TABLES_SUMMARY,
   GET_TABLE_DETAIL,
   GET_TABLE_QUERIES,
+  UPDATE_TABLES,
 } from "../catalog/operations.js";
 import type {
   GetTablesOutput,
@@ -21,6 +23,9 @@ import type {
   QuerySortingKey,
   QueryType,
   SearchArrayFilterMode,
+  Table,
+  TableType,
+  UpdateTableInput,
 } from "../generated/types.js";
 import {
   PaginationInputShape,
@@ -274,6 +279,53 @@ export function defineTableTools(client: CatalogClient): CatalogToolDefinition[]
           out.totalCount,
           out.data
         );
+      }, client),
+    },
+
+    // ── Mutations ──────────────────────────────────────────────────────────
+
+    {
+      name: "catalog_update_table_metadata",
+      config: {
+        title: "Update Table Metadata",
+        description:
+          "Update one or more tables in the Catalog. Accepts a batch (max 500 items per call); each item must include `id` plus the fields to change. Only human-editable metadata is exposed — table identity/schema bindings are not editable through this MCP (use the warehouse ingestion flow).\n\n" +
+          "Requires a READ_WRITE API token. Returns the updated rows.",
+        inputSchema: {
+          data: z
+            .array(
+              z.object({
+                id: z.string().min(1).describe("Catalog UUID of the table."),
+                name: z.string().optional().describe("Override the table name."),
+                externalDescription: z
+                  .string()
+                  .optional()
+                  .describe(
+                    "Source-style description (surfaces as `description` when no Catalog-native description is set)."
+                  ),
+                tableType: z
+                  .enum(["TABLE", "VIEW", "EXTERNAL", "DYNAMIC_TABLE", "TOPIC"])
+                  .optional()
+                  .describe("Set the table's type."),
+                url: z.string().url().optional().describe("External URL for the table."),
+                externalId: z
+                  .string()
+                  .optional()
+                  .describe("Technical identifier from the warehouse."),
+              })
+            )
+            .min(1)
+            .max(500)
+            .describe("Batch of table updates (max 500)."),
+        },
+        annotations: WRITE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input = args.data as Array<UpdateTableInput & { tableType?: TableType }>;
+        const data = await c.query<{ updateTables: Table[] }>(UPDATE_TABLES, {
+          data: input,
+        });
+        return { updated: data.updateTables.length, data: data.updateTables };
       }, client),
     },
   ];

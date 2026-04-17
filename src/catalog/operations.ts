@@ -82,6 +82,32 @@ const TABLE_DETAIL_FIELDS = /* GraphQL */ `
   transformationSource
 `;
 
+export const UPDATE_TABLES = /* GraphQL */ `
+  mutation CatalogUpdateTables($data: [UpdateTableInput!]!) {
+    updateTables(data: $data) {
+      id
+      name
+      externalDescription
+      tableType
+      url
+    }
+  }
+`;
+
+export const UPDATE_COLUMNS_METADATA = /* GraphQL */ `
+  mutation CatalogUpdateColumnsMetadata($data: [UpdateColumnsMetadataInput!]!) {
+    updateColumnsMetadata(data: $data) {
+      id
+      name
+      description
+      descriptionRaw
+      externalDescription
+      isPii
+      isPrimaryKey
+    }
+  }
+`;
+
 export const GET_TABLES_SUMMARY = /* GraphQL */ `
   query CatalogGetTablesSummary(
     $scope: GetTablesScope
