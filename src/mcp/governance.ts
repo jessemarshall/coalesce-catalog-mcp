@@ -2,6 +2,8 @@ import { z } from "zod";
 import type { CatalogClient } from "../client.js";
 import {
   READ_ONLY_ANNOTATIONS,
+  WRITE_ANNOTATIONS,
+  DESTRUCTIVE_ANNOTATIONS,
   type CatalogToolDefinition,
 } from "../catalog/types.js";
 import {
@@ -9,10 +11,19 @@ import {
   GET_TEAMS,
   GET_DATA_QUALITIES,
   GET_PINNED_ASSETS,
+  CREATE_EXTERNAL_LINKS,
+  UPDATE_EXTERNAL_LINKS,
+  DELETE_EXTERNAL_LINKS,
+  UPSERT_DATA_QUALITIES,
+  REMOVE_DATA_QUALITIES,
 } from "../catalog/operations.js";
 import type {
+  CreateExternalLinkInput,
+  DeleteExternalLinkInput,
   EntitiesLinkSorting,
   EntitiesLinkSortingKey,
+  ExternalLink,
+  ExternalLinkTechnology,
   GetEntitiesLinkOutput,
   GetEntitiesLinksScope,
   GetQualityChecksOutput,
@@ -20,6 +31,11 @@ import type {
   GetTeamsOutput,
   GetUsersOutput,
   Pagination,
+  QualityCheck,
+  QualityStatus,
+  UpdateExternalLinkInput,
+  UpsertQualityChecksInput,
+  RemoveQualityChecksInput,
 } from "../generated/types.js";
 import {
   PaginationInputShape,
@@ -258,6 +274,203 @@ export function defineGovernanceTools(
         );
         const out = data.getPinnedAssets;
         return listEnvelope(out.page ?? 0, out.nbPerPage, out.totalCount, out.data);
+      }, client),
+    },
+
+    // ── External links mutations ──────────────────────────────────────────
+
+    {
+      name: "catalog_create_external_links",
+      config: {
+        title: "Create External Links on Tables",
+        description:
+          "Attach external URLs (runbooks, repo links, workflow runs, etc.) to tables. Each input row specifies a tableId, a technology (GITHUB/GITLAB/AIRFLOW/OTHER), and a url. Useful for linking owned tables to their source SQL, runbooks, or orchestration runs.\n\n" +
+          "Batches up to 500; requires READ_WRITE token. Returns the created links with their generated ids.",
+        inputSchema: {
+          data: z
+            .array(
+              z.object({
+                tableId: z.string().min(1).describe("Catalog UUID of the table."),
+                technology: z
+                  .enum(["AIRFLOW", "GITHUB", "GITLAB", "OTHER"])
+                  .describe("Where the link points."),
+                url: z.string().url().describe("The external URL."),
+              })
+            )
+            .min(1)
+            .max(500),
+        },
+        annotations: WRITE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input = args.data as Array<{
+          tableId: string;
+          technology: ExternalLinkTechnology;
+          url: string;
+        }>;
+        const data = await c.query<{ createExternalLinks: ExternalLink[] }>(
+          CREATE_EXTERNAL_LINKS,
+          { data: input satisfies CreateExternalLinkInput[] }
+        );
+        return { created: data.createExternalLinks.length, data: data.createExternalLinks };
+      }, client),
+    },
+
+    {
+      name: "catalog_update_external_links",
+      config: {
+        title: "Update External Link URLs",
+        description:
+          "Update the URL of an existing external link. Identity + technology stay the same; only `url` is editable. Batches up to 500; requires READ_WRITE token.",
+        inputSchema: {
+          data: z
+            .array(
+              z.object({
+                id: z.string().min(1).describe("Catalog UUID of the external link."),
+                url: z.string().url().optional().describe("New URL (omit to leave unchanged)."),
+              })
+            )
+            .min(1)
+            .max(500),
+        },
+        annotations: WRITE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input = args.data as UpdateExternalLinkInput[];
+        const data = await c.query<{ updateExternalLinks: ExternalLink[] }>(
+          UPDATE_EXTERNAL_LINKS,
+          { data: input }
+        );
+        return { updated: data.updateExternalLinks.length, data: data.updateExternalLinks };
+      }, client),
+    },
+
+    {
+      name: "catalog_delete_external_links",
+      config: {
+        title: "Delete External Links",
+        description:
+          "Remove external links by id. Irreversible. Batches up to 500; requires READ_WRITE token.",
+        inputSchema: {
+          data: z
+            .array(
+              z.object({
+                id: z.string().min(1).describe("Catalog UUID of the link to delete."),
+              })
+            )
+            .min(1)
+            .max(500),
+        },
+        annotations: DESTRUCTIVE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input = args.data as DeleteExternalLinkInput[];
+        const data = await c.query<{ deleteExternalLinks: boolean }>(
+          DELETE_EXTERNAL_LINKS,
+          { data: input }
+        );
+        return { success: data.deleteExternalLinks, deleted: input.length };
+      }, client),
+    },
+
+    // ── Quality checks mutations ──────────────────────────────────────────
+
+    {
+      name: "catalog_upsert_data_qualities",
+      config: {
+        title: "Upsert Data Quality Checks",
+        description:
+          "Register or update quality-check results for a single table. Unlike most mutations this one takes a single tableId with a nested array of checks (not a flat batch). Each check carries an externalId (stable identifier from the source tool), name, status, runAt, and optional description/url/columnId.\n\n" +
+          "Designed for pushing results from dbt-tests, Monte Carlo monitors, Soda checks, Great Expectations, etc. Requires READ_WRITE token. Returns the resulting QualityCheck rows.",
+        inputSchema: {
+          tableId: z.string().min(1).describe("Catalog UUID of the table."),
+          qualityChecks: z
+            .array(
+              z.object({
+                externalId: z
+                  .string()
+                  .min(1)
+                  .describe("Stable identifier from the source test tool."),
+                name: z.string().min(1).describe("Human-readable check name."),
+                status: z
+                  .enum(["SUCCESS", "WARNING", "ALERT"])
+                  .describe("Outcome of the check."),
+                runAt: z
+                  .string()
+                  .describe("ISO-8601 timestamp when the check ran."),
+                description: z.string().optional(),
+                url: z.string().url().optional().describe("Link to the source tool's run."),
+                columnId: z
+                  .string()
+                  .optional()
+                  .describe("Scope the check to a specific column on the table."),
+              })
+            )
+            .min(1)
+            .max(500)
+            .describe("Array of checks associated with this tableId."),
+        },
+        annotations: WRITE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input: UpsertQualityChecksInput = {
+          tableId: args.tableId as string,
+          qualityChecks: args.qualityChecks as Array<{
+            externalId: string;
+            name: string;
+            status: QualityStatus;
+            runAt: string;
+            description?: string;
+            url?: string;
+            columnId?: string;
+          }>,
+        };
+        const data = await c.query<{ upsertDataQualities: QualityCheck[] }>(
+          UPSERT_DATA_QUALITIES,
+          { data: input }
+        );
+        return {
+          upserted: data.upsertDataQualities.length,
+          data: data.upsertDataQualities,
+        };
+      }, client),
+    },
+
+    {
+      name: "catalog_remove_data_qualities",
+      config: {
+        title: "Remove Data Quality Checks",
+        description:
+          "Remove quality-check rows by (tableId, externalId) composite keys. Irreversible. Accepts up to 500 keys per call; requires READ_WRITE token.",
+        inputSchema: {
+          qualityChecks: z
+            .array(
+              z.object({
+                tableId: z.string().min(1),
+                externalId: z.string().min(1),
+              })
+            )
+            .min(1)
+            .max(500)
+            .describe("Composite keys (tableId + externalId) of checks to remove."),
+        },
+        annotations: DESTRUCTIVE_ANNOTATIONS,
+      },
+      handler: withErrorHandling(async (args, c) => {
+        const input: RemoveQualityChecksInput = {
+          qualityChecks: args.qualityChecks as Array<{
+            tableId: string;
+            externalId: string;
+          }>,
+        };
+        const data = await c.query<{ removeDataQualities: boolean }>(
+          REMOVE_DATA_QUALITIES,
+          { data: input }
+        );
+        return {
+          success: data.removeDataQualities,
+          removed: input.qualityChecks.length,
+        };
       }, client),
     },
   ];

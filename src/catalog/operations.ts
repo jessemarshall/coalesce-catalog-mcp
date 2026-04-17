@@ -185,6 +185,56 @@ export const GET_AI_ASSISTANT_JOB_RESULT = /* GraphQL */ `
 
 // ── Governance: users, teams, quality checks, pinned assets ─────────────
 
+export const CREATE_EXTERNAL_LINKS = /* GraphQL */ `
+  mutation CatalogCreateExternalLinks($data: [CreateExternalLinkInput!]!) {
+    createExternalLinks(data: $data) {
+      id
+      tableId
+      technology
+      url
+    }
+  }
+`;
+
+export const UPDATE_EXTERNAL_LINKS = /* GraphQL */ `
+  mutation CatalogUpdateExternalLinks($data: [UpdateExternalLinkInput!]!) {
+    updateExternalLinks(data: $data) {
+      id
+      tableId
+      technology
+      url
+    }
+  }
+`;
+
+export const DELETE_EXTERNAL_LINKS = /* GraphQL */ `
+  mutation CatalogDeleteExternalLinks($data: [DeleteExternalLinkInput!]!) {
+    deleteExternalLinks(data: $data)
+  }
+`;
+
+export const UPSERT_DATA_QUALITIES = /* GraphQL */ `
+  mutation CatalogUpsertDataQualities($data: UpsertQualityChecksInput!) {
+    upsertDataQualities(data: $data) {
+      id
+      name
+      description
+      externalId
+      tableId
+      columnId
+      status
+      url
+      runAt
+    }
+  }
+`;
+
+export const REMOVE_DATA_QUALITIES = /* GraphQL */ `
+  mutation CatalogRemoveDataQualities($data: RemoveQualityChecksInput!) {
+    removeDataQualities(data: $data)
+  }
+`;
+
 export const GET_USERS = /* GraphQL */ `
   query CatalogGetUsers($pagination: Pagination) {
     getUsers(pagination: $pagination) {
