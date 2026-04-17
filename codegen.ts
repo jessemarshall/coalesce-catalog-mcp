@@ -16,12 +16,12 @@ const config: CodegenConfig = {
         skipTypename: true,
         useTypeImports: true,
         avoidOptionals: false,
+        // Modern graphql-codegen uses the { input, output } scalar format.
+        // The Catalog schema declares: Timestamp, JSON, DateTime.
         scalars: {
-          UUID: "string",
-          DateTime: "string",
-          Date: "string",
-          JSON: "unknown",
-          JSONObject: "Record<string, unknown>",
+          DateTime: { input: "string", output: "string" },
+          JSON: { input: "unknown", output: "unknown" },
+          Timestamp: { input: "number", output: "number" },
         },
       },
     },
