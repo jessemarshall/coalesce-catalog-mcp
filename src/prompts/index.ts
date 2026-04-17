@@ -1,0 +1,114 @@
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
+/**
+ * Reusable prompt templates exposed via the MCP prompts/list & prompts/get
+ * protocol. Each template is an intentionally short, high-intent instruction
+ * that nudges the model toward the correct Catalog tool sequence — not a
+ * verbose playbook (the investigation playbook lives as a resource).
+ */
+export function registerCatalogPrompts(server: McpServer): void {
+  server.registerPrompt(
+    "catalog-start-here",
+    {
+      title: "Catalog: Start Here",
+      description:
+        "Orient to the Catalog MCP: the entity graph, how to resolve warehouse paths to UUIDs, and which tool answers which question.",
+    },
+    async () => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text:
+              "Before calling any Catalog tool, read catalog://context/overview for the entity graph and catalog://context/tool-routing for the decision tree mapping user questions → tools. If the user gave a warehouse path like DB.SCHEMA.TABLE, call catalog_find_asset_by_path first to resolve it. If the user wants a single-asset overview, prefer catalog_summarize_asset over chaining individual get_* calls.",
+          },
+        },
+      ],
+    })
+  );
+
+  server.registerPrompt(
+    "catalog-asset-summary",
+    {
+      title: "Catalog: Summarize One Asset",
+      description:
+        "Given a warehouse path or Catalog UUID, produce a full cross-domain summary of a table or dashboard.",
+    },
+    async () => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text:
+              "If the user gave a warehouse path, first call catalog_find_asset_by_path to resolve it to a UUID. Then call catalog_summarize_asset with the right kind (TABLE or DASHBOARD). Present the core identity, ownership (users + teams), tags, upstream/downstream lineage counts, and — for tables — the column list and any quality-check results. Follow up with catalog_get_* tools only if the summary flags gaps the user cares about.",
+          },
+        },
+      ],
+    })
+  );
+
+  server.registerPrompt(
+    "catalog-find-consumers",
+    {
+      title: "Catalog: Find Consumers of an Asset",
+      description:
+        "Enumerate everything downstream of a table: dashboards, child tables, and SQL queries that read it.",
+    },
+    async () => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text:
+              "Resolve the asset (catalog_find_asset_by_path if the user gave a path; catalog_search_tables if just a name). Then: (1) call catalog_get_lineages with parentTableId to get downstream table and dashboard edges; group by childTableId vs childDashboardId. (2) Call catalog_get_table_queries to show SELECT-type queries that touched the table (filter queryType: SELECT). (3) Optionally hydrate top-N consumer dashboards via catalog_get_dashboard. Present a concise consumer map with counts and a sample of the most popular consumers.",
+          },
+        },
+      ],
+    })
+  );
+
+  server.registerPrompt(
+    "catalog-investigate-lineage-gaps",
+    {
+      title: "Catalog: Investigate Lineage Gaps",
+      description:
+        "Diagnose why lineage looks incomplete for a given table, with structured findings and remediation suggestions.",
+    },
+    async () => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text:
+              "Resolve the table (catalog_find_asset_by_path). Call catalog_trace_missing_lineage with the tableId. Summarize each finding the tool returns (severity + recommendation). For findings that warrant deeper inspection, follow up with catalog_get_lineages (table-level) and catalog_get_field_lineages (column-level). If the user has READ_WRITE access and wants to patch a gap, propose a specific catalog_upsert_lineages call and wait for explicit approval before executing.",
+          },
+        },
+      ],
+    })
+  );
+
+  server.registerPrompt(
+    "catalog-audit-documentation",
+    {
+      title: "Catalog: Audit Documentation Coverage",
+      description:
+        "Produce a ranked report of undocumented assets in a scope (database, schema, or table).",
+    },
+    async () => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text:
+              "Resolve the scope the user is asking about — could be a databaseId (use catalog_search_schemas to drill down), schemaId, or single tableId. To find undocumented columns: catalog_search_columns with isDocumented: false and the appropriate scope filter. To find undocumented tables: catalog_search_tables in the scope, then filter the returned rows client-side by description absence or description length < 50. Report counts, the top offenders (by popularity DESC), and — if the user has READ_WRITE and asks — propose a catalog_update_column_metadata batch with suggested descriptions for the model to co-author.",
+          },
+        },
+      ],
+    })
+  );
+}

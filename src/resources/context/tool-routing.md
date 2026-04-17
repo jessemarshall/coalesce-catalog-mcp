@@ -1,0 +1,65 @@
+# Catalog Tool Routing — Decision Tree
+
+Pick the tool that directly answers the user's question. Don't chain general-purpose searches when a targeted tool exists.
+
+## "I have a warehouse path (DB.SCHEMA.TABLE or DB.SCHEMA.TABLE.COL)"
+
+→ `catalog_find_asset_by_path` — always the first call. Returns the UUID you need for everything else.
+
+## "Tell me about this table/dashboard" (one-shot context)
+
+→ `catalog_summarize_asset` — single call returns identity + owners + tags + lineage counts + columns + quality checks.
+
+## "Find assets by..."
+
+| Need | Tool | Key filters |
+|---|---|---|
+| Tables by name | `catalog_search_tables` | `nameContains`, `pathContains`, `schemaId` |
+| Columns by flag | `catalog_search_columns` | `isPii`, `isPrimaryKey`, `isDocumented`, `hasColumnJoins` |
+| Dashboards by BI tool | `catalog_search_dashboards` | `sourceId`, `folderPath` |
+| Tables/dashboards in a data product | `catalog_search_data_products` | `entityType`, `withTagId` |
+| Tables/cols/dashboards matching a tag | `catalog_search_tags` then filter by `linkedTermId` | `labelContains` |
+
+## "What feeds into / reads from this asset?" (lineage)
+
+- Upstream of a table: `catalog_get_lineages` with `childTableId`
+- Downstream of a table: `catalog_get_lineages` with `parentTableId`
+- Upstream of a column: `catalog_get_field_lineages` with `childColumnId`
+- Which dashboards read from table X: `catalog_get_lineages` with `parentTableId` + `withChildAssetType: DASHBOARD`
+- Suspected lineage gap: `catalog_trace_missing_lineage` (heuristic diagnostic, not authoritative)
+
+## "How is this table used?" (SQL-level)
+
+- Every SQL query that touched these tables: `catalog_get_table_queries` (up to 50 tableIds, ALL/ANY filter).
+- Semantic SQL search ("queries computing active users"): `catalog_search_queries` — natural language → 10 best matches.
+- Observed JOIN relationships: `catalog_get_column_joins` (scope by `columnIds` for speed; `tableIds` can be slow on large accounts).
+
+## "Who owns this?" / "Where's the runbook?"
+
+- Owners: part of `catalog_summarize_asset` output, or `catalog_get_table` / `catalog_get_dashboard` detail.
+- Runbooks / external URLs: surfaced as `externalLinks` on the detail endpoints.
+
+## "Grade this asset" (quality / documentation)
+
+- Quality test results: `catalog_search_quality_checks` (scope by `tableId`).
+- Documentation coverage: `catalog_search_columns` with `isDocumented: false` + `tableId` or `schemaId`.
+
+## AI assistant (async)
+
+1. `catalog_ask_assistant` — submits a question, returns a jobId.
+2. `catalog_get_assistant_result` — poll until `status: COMPLETED`.
+Use the assistant when the question needs RAG over the full catalog corpus (all descriptions, tags, lineage) — for structured queries, prefer the explicit tools above.
+
+## Mutation routing (require READ_WRITE token)
+
+| Change | Tool |
+|---|---|
+| Fix a description | `catalog_update_column_metadata` (descriptionRaw) or `catalog_update_table_metadata` (externalDescription) |
+| Flag PII / primary key | `catalog_update_column_metadata` |
+| Tag an asset | `catalog_attach_tags` (auto-creates the tag label if new) |
+| Patch a missing lineage edge | `catalog_upsert_lineages` |
+| Push a dbt/Monte Carlo result | `catalog_upsert_data_qualities` |
+| Assign ownership | `catalog_upsert_user_owners` or `catalog_upsert_team_owners` |
+| Create a new glossary term | `catalog_create_term` |
+
+Mutations are filtered out when `COALESCE_CATALOG_READ_ONLY=true`.

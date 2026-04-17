@@ -13,6 +13,8 @@ import { defineAiTools } from "./mcp/ai.js";
 import { defineFindAssetByPath } from "./workflows/find-asset-by-path.js";
 import { defineSummarizeAsset } from "./workflows/summarize-asset.js";
 import { defineTraceMissingLineage } from "./workflows/trace-missing-lineage.js";
+import { registerCatalogResources } from "./resources/index.js";
+import { registerCatalogPrompts } from "./prompts/index.js";
 
 export function isReadOnlyMode(): boolean {
   return process.env[READ_ONLY_ENV_VAR] === "true";
@@ -83,6 +85,9 @@ export function createCoalesceCatalogMcpServer(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     server.registerTool(def.name, def.config, def.handler as any);
   }
+
+  registerCatalogResources(server);
+  registerCatalogPrompts(server);
 
   return server;
 }
