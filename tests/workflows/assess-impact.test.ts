@@ -61,13 +61,19 @@ function makeRouter(routes: RouterRoutes) {
     if (document === GET_LINEAGES) {
       const vars = variables as {
         scope?: { parentTableId?: string; parentDashboardId?: string };
+        pagination: { nbPerPage: number; page: number };
       };
       const parentId = vars.scope?.parentTableId ?? vars.scope?.parentDashboardId;
       if (!parentId) return { getLineages: { totalCount: 0, data: [] } };
       const edges = routes.lineageByParent?.get(parentId);
       if (edges instanceof Error) throw edges;
-      const rows = edges ?? [];
-      return { getLineages: { totalCount: rows.length, data: rows } };
+      const all = edges ?? [];
+      // Honor pagination so tests with >page-size edges actually exercise the
+      // pagination loop in fetchAllDownstreamEdges instead of getting the
+      // whole list back on page 0.
+      const start = vars.pagination.page * vars.pagination.nbPerPage;
+      const slice = all.slice(start, start + vars.pagination.nbPerPage);
+      return { getLineages: { totalCount: all.length, data: slice } };
     }
     if (document === GET_TABLES_DETAIL_BATCH) {
       const vars = variables as { scope?: { ids?: string[] } };
@@ -492,7 +498,7 @@ describe("catalog_assess_impact — completeness contract: pagination + missing-
     expect(callsForT[1].page).toBe(1);
   });
 
-  it("refuses with a clear error when enrichment returns no row for a known downstream id", async () => {
+  it("refuses (with isError: true) when enrichment returns no row for a known downstream id", async () => {
     const client = makeRouter({
       tableDetail: { id: "t-start", row: TABLE_ROW },
       lineageByParent: new Map([
@@ -517,13 +523,46 @@ describe("catalog_assess_impact — completeness contract: pagination + missing-
       includeQualityChecks: false,
     });
 
+    expect(res.isError).toBe(true);
     const out = parseResult(res);
-    // Error returned in the body, not silent partial report.
     expect(out.error).toMatch(/Detail enrichment returned no row/);
     expect(out.error).toMatch(/t-vanished/);
-    expect(out.missingCount).toBe(1);
-    // No partial downstream populated.
+    expect(out.error).toMatch(/1 downstream/);
     expect(out.downstream).toBeUndefined();
+  });
+
+  it("refuses (with isError: true) when a single parent's lineage exceeds the 20-page hard ceiling", async () => {
+    // Mock returns full pages forever with unique child ids, forcing the
+    // ceiling guard in fetchAllDownstreamEdges to fire.
+    let nextChild = 0;
+    const client = makeMockClient((document, variables) => {
+      if (document === GET_TABLE_DETAIL) {
+        return { getTables: { data: [TABLE_ROW] } };
+      }
+      if (document === GET_LINEAGES) {
+        const vars = variables as { pagination: { nbPerPage: number } };
+        const data = Array.from(
+          { length: vars.pagination.nbPerPage },
+          () => ({ childTableId: `t-${nextChild++}`, childDashboardId: null })
+        );
+        // totalCount perpetually one page ahead, so the early-exit conditions
+        // never trigger and the ceiling is the only stop.
+        return { getLineages: { totalCount: nextChild + 1, data } };
+      }
+      return { getDataQualities: { totalCount: 0, data: [] } };
+    });
+
+    const tool = defineAssessImpact(client);
+    const res = await tool.handler({
+      assetKind: "TABLE",
+      assetId: "t-start",
+      maxDepth: 1,
+      includeQualityChecks: false,
+    });
+
+    expect(res.isError).toBe(true);
+    const out = parseResult(res);
+    expect(out.error).toMatch(/Lineage pagination exceeded 20 pages/);
   });
 });
 

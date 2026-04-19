@@ -362,6 +362,21 @@ describe("catalog_governance_scorecard — refusal on oversized scope", () => {
     expect(out.error).toMatch(/databaseId/);
   });
 
+  it("refuses (with isError: true) when tableIds input itself exceeds the 500-table cap", async () => {
+    const client = makeRouter({
+      tablesByScope: () => [],
+      columnsByTableIds: new Map(),
+    });
+    const tool = defineGovernanceScorecard(client);
+    const tableIds = Array.from({ length: 501 }, (_, i) => `t-${i}`);
+    const res = await tool.handler({ tableIds });
+    expect(res.isError).toBe(true);
+    const out = parseResult(res);
+    expect(out.error).toMatch(/501/);
+    expect(out.error).toMatch(/500-table/);
+    expect(out.error).toMatch(/Split into smaller batches/);
+  });
+
   it("processes exactly 500 tables (at the cap, not over)", async () => {
     const tables: MockTable[] = Array.from({ length: 500 }, (_, i) => ({
       id: `t-${i}`,
@@ -403,6 +418,102 @@ describe("catalog_governance_scorecard — empty scope", () => {
       governanceScore: 0,
       axes: ["owned", "described", "tagged", "columnDoc"],
     });
+  });
+});
+
+describe("catalog_governance_scorecard — defensive guards", () => {
+  it("throws when getDataQualities returns a non-numeric totalCount (schema drift defence)", async () => {
+    const tables: MockTable[] = [
+      {
+        id: "t-1",
+        name: "T1",
+        popularity: 0.5,
+        description: "x",
+        ownerEntities: [{ id: "o", userId: "u" }],
+      },
+    ];
+    // Custom client: GET_DATA_QUALITIES returns totalCount=null for our table.
+    const client = makeMockClient((document, variables) => {
+      if (document === GET_TABLES_DETAIL_BATCH) {
+        return {
+          getTables: { totalCount: 1, nbPerPage: 1, page: 0, data: tables },
+        };
+      }
+      if (document === GET_COLUMNS_SUMMARY) {
+        return { getColumns: { totalCount: 0, nbPerPage: 500, page: 0, data: [] } };
+      }
+      if (document === GET_DATA_QUALITIES) {
+        const vars = variables as { scope?: { tableId?: string } };
+        return {
+          getDataQualities: {
+            totalCount: null,
+            nbPerPage: 1,
+            page: 0,
+            data: [],
+            __debugFor: vars.scope?.tableId,
+          },
+        };
+      }
+      return {};
+    });
+    const tool = defineGovernanceScorecard(client);
+    const res = await tool.handler({
+      schemaId: "sch",
+      includeQualityCoverage: true,
+    });
+    expect(res.isError).toBe(true);
+    const out = parseResult(res);
+    expect(out.error).toMatch(/non-numeric totalCount/);
+    expect(out.error).toMatch(/t-1/);
+  });
+
+  it("throws when column pagination wedges past the derived hard ceiling", async () => {
+    const tables: MockTable[] = [
+      {
+        id: "t-uncapped",
+        name: "T",
+        popularity: 0.5,
+        description: "x",
+        ownerEntities: [{ id: "o", userId: "u" }],
+      },
+    ];
+    // 1 table, perTableCap=10, pageSize=500 → maxPages = ceil(10/500)+5 = 6.
+    // Server returns 500 unique columns per page forever (totalCount perpetually
+    // ahead) and never assigns to t-uncapped, so the per-table cap never trips
+    // and the loop relies on the hard ceiling.
+    let nextCol = 0;
+    const client = makeMockClient((document) => {
+      if (document === GET_TABLES_DETAIL_BATCH) {
+        return {
+          getTables: { totalCount: 1, nbPerPage: 1, page: 0, data: tables },
+        };
+      }
+      if (document === GET_COLUMNS_SUMMARY) {
+        const data = Array.from({ length: 500 }, () => ({
+          id: `c-${nextCol++}`,
+          tableId: "t-other-not-in-counts", // never matches the tracked table
+          name: "x",
+          description: "y",
+        }));
+        return {
+          getColumns: {
+            totalCount: nextCol + 500, // perpetually ahead of fetchedSoFar
+            nbPerPage: 500,
+            page: 0,
+            data,
+          },
+        };
+      }
+      return {};
+    });
+    const tool = defineGovernanceScorecard(client);
+    const res = await tool.handler({
+      schemaId: "sch",
+      perTableColumnCap: 10,
+    });
+    expect(res.isError).toBe(true);
+    const out = parseResult(res);
+    expect(out.error).toMatch(/Column pagination exceeded/);
   });
 });
 

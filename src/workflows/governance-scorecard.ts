@@ -107,6 +107,14 @@ function pickScope(args: {
   // Most-specific wins. Validated up front so the user gets a clear error
   // instead of silently mis-scoping.
   if (Array.isArray(args.tableIds) && args.tableIds.length > 0) {
+    if (args.tableIds.length > TABLE_HARD_CAP) {
+      // Enforce the documented max here rather than relying on the post-fetch
+      // totalCount check — a server-side ids cap could silently drop the tail.
+      throw new Error(
+        `tableIds (${args.tableIds.length}) exceeds the ${TABLE_HARD_CAP}-table ` +
+          `scorecard cap. Split into smaller batches and merge the results client-side.`
+      );
+    }
     return { field: "tableIds", filter: { ids: args.tableIds as string[] } };
   }
   if (typeof args.schemaId === "string") {

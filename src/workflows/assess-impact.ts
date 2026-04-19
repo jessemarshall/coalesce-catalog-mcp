@@ -489,7 +489,9 @@ export function defineAssessImpact(
       // Surface any downstream id we know exists (it came back from lineage)
       // but couldn't enrich. Conflating "no row returned" with "no owners"
       // would silently inflate unownedCount with assets the API simply
-      // refused to detail. Refuse rather than report a partial blast.
+      // refused to detail. Throw so withErrorHandling sets isError: true —
+      // the same shape the scorecard uses for its refusals, so consumers
+      // filtering on isError handle both consistently.
       const missing: Array<{ id: string; kind: AssetKind }> = [];
       for (const [id, node] of traversal) {
         if (id === assetId) continue;
@@ -504,14 +506,12 @@ export function defineAssessImpact(
           .slice(0, 5)
           .map((m) => `${m.kind}:${m.id}`)
           .join(", ");
-        return {
-          error:
-            `Detail enrichment returned no row for ${missing.length} downstream ` +
+        throw new Error(
+          `Detail enrichment returned no row for ${missing.length} downstream ` +
             `asset(s) reached via lineage (sample: ${sample}). The completeness ` +
             `contract requires every reached node to be enriched; re-run after ` +
-            `the catalog catches up, or scope the assessment to a sub-tree.`,
-          missingCount: missing.length,
-        };
+            `the catalog catches up, or scope the assessment to a sub-tree.`
+        );
       }
 
       const enriched: EnrichedAsset[] = [];
