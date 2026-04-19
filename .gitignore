@@ -7,3 +7,4 @@ dist/
 coverage/
 .tsbuildinfo
 docs/RELEASES.md
+CLAUDE.md
