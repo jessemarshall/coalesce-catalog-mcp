@@ -191,7 +191,9 @@ describe("catalog_assess_impact — happy path", () => {
 
     expect(out.qualityChecks).toEqual({
       totalCount: 3,
-      byStatus: { SUCCESS: 2, WARNING: 0, ALERT: 1 },
+      byStatus: { SUCCESS: 2, WARNING: 0, ALERT: 1, OTHER: 0 },
+      byStatusSampledFrom: 3,
+      byStatusComplete: true,
     });
 
     const sev = out.severity as Record<string, unknown>;
@@ -417,6 +419,111 @@ describe("catalog_assess_impact — completeness contract (refusal, not truncati
     expect(res.isError).toBeUndefined();
     const out = parseResult(res);
     expect((out.downstream as Record<string, unknown>).totalCount).toBe(3000);
+  });
+});
+
+describe("catalog_assess_impact — completeness contract: pagination + missing-row refusal", () => {
+  it("paginates per-node lineage when a single parent's downstream exceeds the page size", async () => {
+    // 750 children off one node. Page size is 500, so this requires a second
+    // page. Without pagination the cap check would think there are only 500
+    // children, which is the whole bug we're fixing.
+    const wide: LineageEdge[] = Array.from({ length: 750 }, (_, i) => ({
+      childTableId: `t-${i}`,
+      childDashboardId: null,
+    }));
+    const summary = new Map(
+      Array.from({ length: 750 }, (_, i) => [
+        `t-${i}`,
+        { id: `t-${i}`, name: `T${i}`, popularity: 0.1 },
+      ])
+    );
+    // We need the mock to return paginated results. Custom router below
+    // (the default helper returns everything in one shot, which is exactly
+    // what we want NOT to do here).
+    let callsForT: Array<{ page: number; nbPerPage: number }> = [];
+    const client = makeMockClient((document, variables) => {
+      if (document === GET_TABLE_DETAIL) {
+        return { getTables: { data: [TABLE_ROW] } };
+      }
+      if (document === GET_LINEAGES) {
+        const vars = variables as {
+          scope?: { parentTableId?: string };
+          pagination: { nbPerPage: number; page: number };
+        };
+        if (vars.scope?.parentTableId === "t-start") {
+          callsForT.push({ page: vars.pagination.page, nbPerPage: vars.pagination.nbPerPage });
+          const start = vars.pagination.page * vars.pagination.nbPerPage;
+          const slice = wide.slice(start, start + vars.pagination.nbPerPage);
+          return {
+            getLineages: { totalCount: wide.length, data: slice },
+          };
+        }
+        return { getLineages: { totalCount: 0, data: [] } };
+      }
+      if (document === GET_TABLES_DETAIL_BATCH) {
+        const vars = variables as { scope?: { ids?: string[] } };
+        const ids = vars.scope?.ids ?? [];
+        return {
+          getTables: {
+            totalCount: ids.length,
+            data: ids
+              .map((id) => summary.get(id))
+              .filter((r): r is NonNullable<typeof r> => Boolean(r)),
+          },
+        };
+      }
+      return { getDataQualities: { totalCount: 0, data: [] } };
+    });
+
+    const tool = defineAssessImpact(client);
+    const res = await tool.handler({
+      assetKind: "TABLE",
+      assetId: "t-start",
+      maxDepth: 1,
+      includeQualityChecks: false,
+    });
+
+    expect(res.isError).toBeUndefined();
+    const out = parseResult(res);
+    expect((out.downstream as Record<string, unknown>).totalCount).toBe(750);
+    // Two paginated calls for the lineage.
+    expect(callsForT.length).toBe(2);
+    expect(callsForT[0].page).toBe(0);
+    expect(callsForT[1].page).toBe(1);
+  });
+
+  it("refuses with a clear error when enrichment returns no row for a known downstream id", async () => {
+    const client = makeRouter({
+      tableDetail: { id: "t-start", row: TABLE_ROW },
+      lineageByParent: new Map([
+        [
+          "t-start",
+          [
+            { childTableId: "t-known", childDashboardId: null },
+            { childTableId: "t-vanished", childDashboardId: null },
+          ],
+        ],
+      ]),
+      // Only enrich one of the two — t-vanished is omitted from the response.
+      tableSummary: new Map([
+        ["t-known", { id: "t-known", name: "KNOWN", popularity: 0.5 }],
+      ]),
+    });
+
+    const tool = defineAssessImpact(client);
+    const res = await tool.handler({
+      assetKind: "TABLE",
+      assetId: "t-start",
+      includeQualityChecks: false,
+    });
+
+    const out = parseResult(res);
+    // Error returned in the body, not silent partial report.
+    expect(out.error).toMatch(/Detail enrichment returned no row/);
+    expect(out.error).toMatch(/t-vanished/);
+    expect(out.missingCount).toBe(1);
+    // No partial downstream populated.
+    expect(out.downstream).toBeUndefined();
   });
 });
 

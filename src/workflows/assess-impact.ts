@@ -92,13 +92,6 @@ interface Severity {
   rationale: SeverityComponent[];
 }
 
-function isTableEdge(edge: {
-  childTableId?: string | null;
-  childDashboardId?: string | null;
-}): boolean {
-  return Boolean(edge.childTableId);
-}
-
 function pickChildId(edge: {
   childTableId?: string | null;
   childDashboardId?: string | null;
@@ -109,12 +102,51 @@ function pickChildId(edge: {
   return null;
 }
 
+const LINEAGE_PAGE_SIZE = 500;
+// Hard ceiling per parent node so a misbehaving server (e.g. paginating
+// without ever decrementing) can't wedge the BFS forever. 10000 edges off
+// one node is already an extreme hub; throwing here is closer to the
+// completeness contract than silently capping.
+const LINEAGE_PAGES_PER_NODE_MAX = 20;
+
+async function fetchAllDownstreamEdges(
+  client: CatalogClient,
+  parentId: string,
+  parentKind: AssetKind
+): Promise<Array<{ childTableId?: string | null; childDashboardId?: string | null }>> {
+  // Paginates exhaustively. The "complete or refuse" contract requires every
+  // edge — single-page fetches at nbPerPage=500 silently drop anything past
+  // the first page on hub tables.
+  const all: Array<{ childTableId?: string | null; childDashboardId?: string | null }> = [];
+  for (let page = 0; page < LINEAGE_PAGES_PER_NODE_MAX; page++) {
+    const resp = await client.execute<{ getLineages: GetLineagesOutput }>(
+      GET_LINEAGES,
+      {
+        scope:
+          parentKind === "TABLE"
+            ? { parentTableId: parentId }
+            : { parentDashboardId: parentId },
+        pagination: { nbPerPage: LINEAGE_PAGE_SIZE, page },
+      }
+    );
+    const rows = resp.getLineages.data;
+    for (const r of rows) all.push(r);
+    if (rows.length < LINEAGE_PAGE_SIZE) return all;
+    if ((page + 1) * LINEAGE_PAGE_SIZE >= resp.getLineages.totalCount) return all;
+  }
+  throw new Error(
+    `Lineage pagination exceeded ${LINEAGE_PAGES_PER_NODE_MAX} pages for ` +
+      `${parentKind.toLowerCase()} ${parentId} (>${LINEAGE_PAGES_PER_NODE_MAX * LINEAGE_PAGE_SIZE} edges). ` +
+      `Refusing to produce a partial impact report; investigate the lineage data for this node.`
+  );
+}
+
 async function traverseDownstream(
   client: CatalogClient,
   startId: string,
   startKind: AssetKind,
   maxDepth: number
-): Promise<{ visited: Map<string, ReachedNode>; truncated: false }> {
+): Promise<Map<string, ReachedNode>> {
   const visited = new Map<string, ReachedNode>();
   visited.set(startId, { kind: startKind, depth: 0 });
   let frontier: Array<{ id: string; kind: AssetKind }> = [
@@ -135,20 +167,12 @@ async function traverseDownstream(
     }
 
     const edgesPerNode = await Promise.all(
-      frontier.map((node) =>
-        client.execute<{ getLineages: GetLineagesOutput }>(GET_LINEAGES, {
-          scope:
-            node.kind === "TABLE"
-              ? { parentTableId: node.id }
-              : { parentDashboardId: node.id },
-          pagination: { nbPerPage: 500, page: 0 },
-        })
-      )
+      frontier.map((node) => fetchAllDownstreamEdges(client, node.id, node.kind))
     );
 
     const nextFrontier: Array<{ id: string; kind: AssetKind }> = [];
-    for (const result of edgesPerNode) {
-      for (const edge of result.getLineages.data) {
+    for (const edges of edgesPerNode) {
+      for (const edge of edges) {
         const child = pickChildId(edge);
         if (!child) continue;
         if (visited.has(child.id)) continue;
@@ -161,7 +185,7 @@ async function traverseDownstream(
     frontier = nextFrontier;
   }
 
-  return { visited, truncated: false };
+  return visited;
 }
 
 async function enrichByKind(
@@ -218,8 +242,13 @@ function extractTeams(row: Record<string, unknown> | undefined): OwnerTeamRef[] 
 }
 
 function userOwnerCount(row: Record<string, unknown> | undefined): number {
+  // Filter out owner records whose userId is null — the relationship row exists
+  // but doesn't actually point at a user (orphaned binding). For governance
+  // purposes "userId is null" is functionally unowned, not silently owned.
   if (!row || !Array.isArray(row.ownerEntities)) return 0;
-  return (row.ownerEntities as unknown[]).length;
+  return (row.ownerEntities as Array<Record<string, unknown>>).filter(
+    (o) => o.userId != null
+  ).length;
 }
 
 function computeSeverity(opts: {
@@ -250,8 +279,17 @@ function computeSeverity(opts: {
 
   let recencyPts = 0;
   let recencyDetail = "n/a (DASHBOARD has no last-queried signal)";
-  if (opts.startKind === "TABLE" && opts.lastQueriedAt != null) {
-    const ageDays = (opts.now - opts.lastQueriedAt) / (1000 * 60 * 60 * 24);
+  if (
+    opts.startKind === "TABLE" &&
+    typeof opts.lastQueriedAt === "number" &&
+    Number.isFinite(opts.lastQueriedAt)
+  ) {
+    // Clamp negative ages (clock skew on the extraction worker can leave a
+    // future timestamp; we don't want to award full recency for that).
+    const ageDays = Math.max(
+      0,
+      (opts.now - opts.lastQueriedAt) / (1000 * 60 * 60 * 24)
+    );
     if (ageDays < 7) recencyPts = 20;
     else if (ageDays < 30) recencyPts = 12;
     else if (ageDays < 90) recencyPts = 6;
@@ -261,6 +299,7 @@ function computeSeverity(opts: {
   }
 
   const score = Math.round(downstreamPts + queryVolumePts + recencyPts);
+  // Bucket boundaries: 0-29 low, 30-59 medium, 60-100 high.
   const bucket: Severity["bucket"] =
     score < 30 ? "low" : score < 60 ? "medium" : "high";
 
@@ -325,15 +364,34 @@ function summariseQualityStatuses(
   data: GetQualityChecksOutput | null
 ): {
   totalCount: number;
-  byStatus: { SUCCESS: number; WARNING: number; ALERT: number };
+  byStatus: {
+    SUCCESS: number;
+    WARNING: number;
+    ALERT: number;
+    OTHER: number;
+  };
+  byStatusSampledFrom: number;
+  byStatusComplete: boolean;
 } | null {
   if (!data) return null;
-  const counts = { SUCCESS: 0, WARNING: 0, ALERT: 0 };
+  // Always reconcile to totalCount: any new/unknown status (e.g. ERROR, MUTED)
+  // lands in OTHER so the byStatus sum equals data.data.length, and
+  // byStatusSampledFrom plus byStatusComplete tell the caller whether the
+  // sample equals the full population. Without this, an LLM consumer reading
+  // sum(byStatus) < totalCount infers missing checks that aren't actually
+  // missing.
+  const counts = { SUCCESS: 0, WARNING: 0, ALERT: 0, OTHER: 0 };
   for (const row of data.data as Array<{ status?: string }>) {
-    const s = row.status as keyof typeof counts | undefined;
-    if (s && s in counts) counts[s] += 1;
+    const s = row.status;
+    if (s === "SUCCESS" || s === "WARNING" || s === "ALERT") counts[s] += 1;
+    else counts.OTHER += 1;
   }
-  return { totalCount: data.totalCount, byStatus: counts };
+  return {
+    totalCount: data.totalCount,
+    byStatus: counts,
+    byStatusSampledFrom: data.data.length,
+    byStatusComplete: data.data.length === data.totalCount,
+  };
 }
 
 export function defineAssessImpact(
@@ -351,7 +409,7 @@ export function defineAssessImpact(
         "  - downstream_impact: 0-60 pts, log-scaled by reached-asset count\n" +
         "  - query_volume: 0-20 pts, log-scaled by numberOfQueries (TABLE-only)\n" +
         "  - query_recency: 0-20 pts, banded by lastQueriedAt age (<7d / <30d / <90d)\n" +
-        "Buckets: 0-30 low, 30-60 medium, 60-100 high.\n\n" +
+        "Buckets: 0-29 low, 30-59 medium, 60-100 high.\n\n" +
         "One call replaces 5+ chained ones (lineage + per-asset enrichment + ownership + quality + scoring). Use before any deprecate / archive / restructure decision.",
       inputSchema: AssessImpactInputShape,
       annotations: READ_ONLY_ANNOTATIONS,
@@ -417,7 +475,7 @@ export function defineAssessImpact(
       // batched call per kind regardless of how mixed the graph is.
       const reachedTableIds: string[] = [];
       const reachedDashboardIds: string[] = [];
-      for (const [id, node] of traversal.visited) {
+      for (const [id, node] of traversal) {
         if (id === assetId) continue;
         if (node.kind === "TABLE") reachedTableIds.push(id);
         else reachedDashboardIds.push(id);
@@ -428,21 +486,49 @@ export function defineAssessImpact(
         enrichByKind(c, reachedDashboardIds, "DASHBOARD"),
       ]);
 
-      const enriched: EnrichedAsset[] = [];
-      for (const [id, node] of traversal.visited) {
+      // Surface any downstream id we know exists (it came back from lineage)
+      // but couldn't enrich. Conflating "no row returned" with "no owners"
+      // would silently inflate unownedCount with assets the API simply
+      // refused to detail. Refuse rather than report a partial blast.
+      const missing: Array<{ id: string; kind: AssetKind }> = [];
+      for (const [id, node] of traversal) {
         if (id === assetId) continue;
         const row =
           node.kind === "TABLE"
             ? tableEnrichment.get(id)
             : dashboardEnrichment.get(id);
+        if (!row) missing.push({ id, kind: node.kind });
+      }
+      if (missing.length > 0) {
+        const sample = missing
+          .slice(0, 5)
+          .map((m) => `${m.kind}:${m.id}`)
+          .join(", ");
+        return {
+          error:
+            `Detail enrichment returned no row for ${missing.length} downstream ` +
+            `asset(s) reached via lineage (sample: ${sample}). The completeness ` +
+            `contract requires every reached node to be enriched; re-run after ` +
+            `the catalog catches up, or scope the assessment to a sub-tree.`,
+          missingCount: missing.length,
+        };
+      }
+
+      const enriched: EnrichedAsset[] = [];
+      for (const [id, node] of traversal) {
+        if (id === assetId) continue;
+        const row =
+          node.kind === "TABLE"
+            ? tableEnrichment.get(id)!
+            : dashboardEnrichment.get(id)!;
         const teams = extractTeams(row);
         enriched.push({
           id,
-          name: (row?.name as string | null) ?? null,
+          name: (row.name as string | null) ?? null,
           kind: node.kind,
-          popularity: (row?.popularity as number | null) ?? null,
-          isDeprecated: (row?.isDeprecated as boolean | null) ?? null,
-          isVerified: (row?.isVerified as boolean | null) ?? null,
+          popularity: (row.popularity as number | null) ?? null,
+          isDeprecated: (row.isDeprecated as boolean | null) ?? null,
+          isVerified: (row.isVerified as boolean | null) ?? null,
           depth: node.depth,
           ownerUserCount: userOwnerCount(row),
           ownerTeamCount: teams.length,
