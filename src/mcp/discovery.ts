@@ -168,7 +168,7 @@ export function defineDiscoveryTools(
           scope: buildSourcesScope(args),
           pagination: pagination as Pagination,
         };
-        const data = await c.query<{ getSources: GetSourcesOutput }>(
+        const data = await c.execute<{ getSources: GetSourcesOutput }>(
           GET_SOURCES,
           variables
         );
@@ -192,7 +192,7 @@ export function defineDiscoveryTools(
           scope: buildDatabasesScope(args),
           pagination: pagination as Pagination,
         };
-        const data = await c.query<{ getDatabases: GetDatabasesOutput }>(
+        const data = await c.execute<{ getDatabases: GetDatabasesOutput }>(
           GET_DATABASES,
           variables
         );
@@ -216,7 +216,7 @@ export function defineDiscoveryTools(
           scope: buildSchemasScope(args),
           pagination: pagination as Pagination,
         };
-        const data = await c.query<{ getSchemas: GetSchemasOutput }>(
+        const data = await c.execute<{ getSchemas: GetSchemasOutput }>(
           GET_SCHEMAS,
           variables
         );

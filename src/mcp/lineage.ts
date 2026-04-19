@@ -45,6 +45,7 @@ import {
   SortDirectionSchema,
 } from "../schemas/sorting.js";
 import { listEnvelope, withErrorHandling } from "./tool-helpers.js";
+import { withConfirmation } from "./confirmation.js";
 
 // ── Shared lineage enums ────────────────────────────────────────────────────
 
@@ -314,7 +315,7 @@ async function hydrateAssetLineages(
   if (tableIds.size > 0) {
     tasks.push(
       client
-        .query<{ getTables: GetTablesOutput }>(GET_TABLES_SUMMARY, {
+        .execute<{ getTables: GetTablesOutput }>(GET_TABLES_SUMMARY, {
           scope: { ids: [...tableIds] },
           pagination: { nbPerPage: Math.min(500, tableIds.size), page: 0 },
         })
@@ -328,7 +329,7 @@ async function hydrateAssetLineages(
   if (dashboardIds.size > 0) {
     tasks.push(
       client
-        .query<{ getDashboards: GetDashboardsOutput }>(GET_DASHBOARDS_SUMMARY, {
+        .execute<{ getDashboards: GetDashboardsOutput }>(GET_DASHBOARDS_SUMMARY, {
           scope: { ids: [...dashboardIds] },
           pagination: { nbPerPage: Math.min(500, dashboardIds.size), page: 0 },
         })
@@ -364,7 +365,7 @@ async function hydrateFieldLineages(
   if (columnIds.size > 0) {
     tasks.push(
       client
-        .query<{ getColumns: GetColumnsOutput }>(GET_COLUMNS_SUMMARY, {
+        .execute<{ getColumns: GetColumnsOutput }>(GET_COLUMNS_SUMMARY, {
           scope: { ids: [...columnIds] },
           pagination: { nbPerPage: Math.min(500, columnIds.size), page: 0 },
         })
@@ -383,7 +384,7 @@ async function hydrateFieldLineages(
   if (dashboardIds.size > 0) {
     tasks.push(
       client
-        .query<{ getDashboards: GetDashboardsOutput }>(GET_DASHBOARDS_SUMMARY, {
+        .execute<{ getDashboards: GetDashboardsOutput }>(GET_DASHBOARDS_SUMMARY, {
           scope: { ids: [...dashboardIds] },
           pagination: { nbPerPage: Math.min(500, dashboardIds.size), page: 0 },
         })
@@ -414,17 +415,19 @@ function enrichAssetEdge(
   hydrationMap: Map<string, HydratedEndpoint> | null
 ): Record<string, unknown> {
   const parentId = edge.parentTableId ?? edge.parentDashboardId ?? undefined;
+  const parentKind: "TABLE" | "DASHBOARD" = edge.parentTableId ? "TABLE" : "DASHBOARD";
   const childId = edge.childTableId ?? edge.childDashboardId ?? undefined;
+  const childKind: "TABLE" | "DASHBOARD" = edge.childTableId ? "TABLE" : "DASHBOARD";
   return {
     ...edge,
     ...(direction ? { direction } : {}),
     createdAtIso: toIso(edge.createdAt),
     refreshedAtIso: toIso(edge.refreshedAt),
     ...(hydrationMap && parentId
-      ? { parent: hydrationMap.get(parentId) ?? { id: parentId, kind: "TABLE" } }
+      ? { parent: hydrationMap.get(parentId) ?? { id: parentId, kind: parentKind } }
       : {}),
     ...(hydrationMap && childId
-      ? { child: hydrationMap.get(childId) ?? { id: childId, kind: "TABLE" } }
+      ? { child: hydrationMap.get(childId) ?? { id: childId, kind: childKind } }
       : {}),
   };
 }
@@ -436,21 +439,29 @@ function enrichFieldEdge(
 ): Record<string, unknown> {
   const parentId =
     edge.parentColumnId ?? edge.parentDashboardFieldId ?? undefined;
+  const parentKind: HydratedEndpoint["kind"] = edge.parentColumnId
+    ? "COLUMN"
+    : "DASHBOARD_FIELD";
   const childId =
     edge.childColumnId ??
     edge.childDashboardFieldId ??
     edge.childDashboardId ??
     undefined;
+  const childKind: HydratedEndpoint["kind"] = edge.childColumnId
+    ? "COLUMN"
+    : edge.childDashboardFieldId
+      ? "DASHBOARD_FIELD"
+      : "DASHBOARD";
   return {
     ...edge,
     ...(direction ? { direction } : {}),
     createdAtIso: toIso(edge.createdAt),
     refreshedAtIso: toIso(edge.refreshedAt),
     ...(hydrationMap && parentId
-      ? { parent: hydrationMap.get(parentId) ?? { id: parentId, kind: "COLUMN" } }
+      ? { parent: hydrationMap.get(parentId) ?? { id: parentId, kind: parentKind } }
       : {}),
     ...(hydrationMap && childId
-      ? { child: hydrationMap.get(childId) ?? { id: childId, kind: "COLUMN" } }
+      ? { child: hydrationMap.get(childId) ?? { id: childId, kind: childKind } }
       : {}),
   };
 }
@@ -488,7 +499,7 @@ export function defineLineageTools(
           ),
           pagination: pagination as Pagination,
         };
-        const data = await c.query<{ getLineages: GetLineagesOutput }>(
+        const data = await c.execute<{ getLineages: GetLineagesOutput }>(
           GET_LINEAGES,
           variables
         );
@@ -531,7 +542,7 @@ export function defineLineageTools(
           ),
           pagination: pagination as Pagination,
         };
-        const data = await c.query<{ getFieldLineages: GetFieldLineagesOutput }>(
+        const data = await c.execute<{ getFieldLineages: GetFieldLineagesOutput }>(
           GET_FIELD_LINEAGES,
           variables
         );
@@ -584,7 +595,7 @@ export function defineLineageTools(
       },
       handler: withErrorHandling(async (args, c) => {
         const input = args.data as UpsertLineageInput[];
-        const data = await c.query<{ upsertLineages: Lineage[] }>(
+        const data = await c.execute<{ upsertLineages: Lineage[] }>(
           UPSERT_LINEAGES,
           { data: input }
         );
@@ -625,14 +636,23 @@ export function defineLineageTools(
         },
         annotations: DESTRUCTIVE_ANNOTATIONS,
       },
-      handler: withErrorHandling(async (args, c) => {
-        const input = args.data as DeleteLineageInput[];
-        const data = await c.query<{ deleteLineages: boolean }>(
-          DELETE_LINEAGES,
-          { data: input }
-        );
-        return { success: data.deleteLineages, deleted: input.length };
-      }, client),
+      handler: withErrorHandling(
+        withConfirmation<{ data: DeleteLineageInput[] }>(
+          {
+            action: "Delete lineage edges",
+            summarize: (a) => `Permanently delete ${a.data.length} lineage edge(s).`,
+          },
+          async (args, c) => {
+            const input = args.data;
+            const data = await c.execute<{ deleteLineages: boolean }>(
+              DELETE_LINEAGES,
+              { data: input }
+            );
+            return { success: data.deleteLineages, deleted: input.length };
+          }
+        ),
+        client
+      ),
     },
   ];
 }

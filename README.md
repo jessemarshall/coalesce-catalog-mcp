@@ -394,6 +394,8 @@ Content lives in [`src/resources/context/`](src/resources/context) — edit the 
 - **`catalog_find_asset_by_path`** - Resolve a dotted warehouse path to a UUID. (See [Discovery](#discovery) above.)
 - **`catalog_summarize_asset`** - Full cross-domain overview of a TABLE or DASHBOARD in a single call: identity + ownership + tags + lineage counts + (for tables) columns + quality checks. Sub-queries run in parallel via `Promise.allSettled`; caller-controllable limits per section.
 - **`catalog_trace_missing_lineage`** - Lineage coverage diagnostic. See [Lineage](#lineage--asset-and-column-level-edges-diagnostics-writes) above.
+- **`catalog_assess_impact`** - Deprecation blast-radius report for a TABLE or DASHBOARD. Walks downstream lineage (depth 1-3, paginated exhaustively per node), batch-enriches every reached asset with ownership + popularity, and returns a 0-100 severity score with per-component rationale. **Completeness contract:** refuses with an explicit error when the depth-2 graph exceeds 2000 distinct nodes (or 500 at depth 3) — never returns a silently truncated report. Surfaces `distinctOwnerTeamCount` (teams to coordinate with) and `unownedCount` (orphaned downstream).
+- **`catalog_governance_scorecard`** - Coverage matrix per database, schema, or explicit `tableIds` list. Per-table flags for ownership / description / column-doc % / tag count, plus an optional 5th axis (`includeQualityCoverage: true` adds quality-check coverage). Aggregate `governanceScore` is popularity-weighted by default (matching Health-dashboard semantics); pass `weighting: 'equal'` for one-table-one-vote audits. Refuses scopes >500 tables.
 
 </details>
 

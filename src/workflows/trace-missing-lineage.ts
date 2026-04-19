@@ -84,19 +84,19 @@ export function defineTraceMissingLineage(
       // Fetch in parallel: detail, upstream edges, downstream edges, columns
       const [detailRes, upstreamRes, downstreamRes, columnsRes] =
         await Promise.allSettled([
-          c.query<{ getTables: { data: Record<string, unknown>[] } }>(
+          c.execute<{ getTables: { data: Record<string, unknown>[] } }>(
             GET_TABLE_DETAIL,
             { ids: [tableId] }
           ),
-          c.query<{ getLineages: GetLineagesOutput }>(GET_LINEAGES, {
+          c.execute<{ getLineages: GetLineagesOutput }>(GET_LINEAGES, {
             scope: { childTableId: tableId },
             pagination: { nbPerPage: 500, page: 0 },
           }),
-          c.query<{ getLineages: GetLineagesOutput }>(GET_LINEAGES, {
+          c.execute<{ getLineages: GetLineagesOutput }>(GET_LINEAGES, {
             scope: { parentTableId: tableId },
             pagination: { nbPerPage: 500, page: 0 },
           }),
-          c.query<{ getColumns: GetColumnsOutput }>(GET_COLUMNS_SUMMARY, {
+          c.execute<{ getColumns: GetColumnsOutput }>(GET_COLUMNS_SUMMARY, {
             scope: { tableId },
             sorting: [{ sortingKey: "sourceOrder", direction: "ASC" }],
             pagination: { nbPerPage: sampleSize, page: 0 },
@@ -176,7 +176,7 @@ export function defineTraceMissingLineage(
         const sampledColumns = columns.data.slice(0, sampleSize);
         const fieldResults = await Promise.allSettled(
           sampledColumns.map((col) =>
-            c.query<{ getFieldLineages: GetFieldLineagesOutput }>(
+            c.execute<{ getFieldLineages: GetFieldLineagesOutput }>(
               GET_FIELD_LINEAGES,
               {
                 scope: { childColumnId: col.id as string },

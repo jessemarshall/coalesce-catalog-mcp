@@ -11,6 +11,8 @@ import { defineAiTools } from "../src/mcp/ai.js";
 import { defineFindAssetByPath } from "../src/workflows/find-asset-by-path.js";
 import { defineSummarizeAsset } from "../src/workflows/summarize-asset.js";
 import { defineTraceMissingLineage } from "../src/workflows/trace-missing-lineage.js";
+import { defineAssessImpact } from "../src/workflows/assess-impact.js";
+import { defineGovernanceScorecard } from "../src/workflows/governance-scorecard.js";
 
 const client = createClient({
   apiKey: "dummy",
@@ -31,12 +33,14 @@ function allDefinitions() {
     defineFindAssetByPath(client),
     defineSummarizeAsset(client),
     defineTraceMissingLineage(client),
+    defineAssessImpact(client),
+    defineGovernanceScorecard(client),
   ];
 }
 
 describe("tool registration", () => {
-  it("registers 52 tools across all domains", () => {
-    expect(allDefinitions()).toHaveLength(52);
+  it("registers 54 tools across all domains", () => {
+    expect(allDefinitions()).toHaveLength(54);
   });
 
   it("every tool name starts with 'catalog_'", () => {
@@ -73,14 +77,14 @@ describe("tool registration", () => {
     }
   });
 
-  it("splits roughly 29 read / 23 write", () => {
+  it("splits roughly 31 read / 23 write", () => {
     const reads = allDefinitions().filter(
       (d) => d.config.annotations?.readOnlyHint === true
     );
     const writes = allDefinitions().filter(
       (d) => d.config.annotations?.readOnlyHint !== true
     );
-    expect(reads).toHaveLength(29);
+    expect(reads).toHaveLength(31);
     expect(writes).toHaveLength(23);
   });
 
