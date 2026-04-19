@@ -715,6 +715,28 @@ export const GET_DASHBOARD_DETAIL = /* GraphQL */ `
   }
 `;
 
+// Batch variant of DASHBOARD_DETAIL — same fieldset, server-side paginated so
+// callers can fetch many dashboards' descriptions/owners/tags in one call.
+// Used by the impact assessor for downstream-asset ownership enrichment;
+// GET_DASHBOARD_DETAIL above stays scoped to a single id for the per-asset
+// lookup tool.
+export const GET_DASHBOARDS_DETAIL_BATCH = /* GraphQL */ `
+  query CatalogGetDashboardsDetailBatch(
+    $scope: GetDashboardsScope
+    $sorting: [DashboardSorting!]
+    $pagination: Pagination
+  ) {
+    getDashboards(scope: $scope, sorting: $sorting, pagination: $pagination) {
+      totalCount
+      nbPerPage
+      page
+      data {
+        ${DASHBOARD_DETAIL_FIELDS}
+      }
+    }
+  }
+`;
+
 const COLUMN_SUMMARY_FIELDS = /* GraphQL */ `
   id
   name

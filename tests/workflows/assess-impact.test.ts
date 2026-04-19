@@ -4,8 +4,8 @@ import {
   GET_TABLE_DETAIL,
   GET_DASHBOARD_DETAIL,
   GET_LINEAGES,
-  GET_TABLES_SUMMARY,
-  GET_DASHBOARDS_SUMMARY,
+  GET_TABLES_DETAIL_BATCH,
+  GET_DASHBOARDS_DETAIL_BATCH,
   GET_DATA_QUALITIES,
 } from "../../src/catalog/operations.js";
 import { CatalogGraphQLError } from "../../src/client.js";
@@ -20,13 +20,23 @@ interface LineageEdge {
   childDashboardId?: string | null;
 }
 
+interface DownstreamAssetMock {
+  id: string;
+  name?: string;
+  popularity?: number;
+  isDeprecated?: boolean;
+  isVerified?: boolean;
+  ownerEntities?: Array<Record<string, unknown>>;
+  teamOwnerEntities?: Array<Record<string, unknown>>;
+}
+
 interface RouterRoutes {
   tableDetail?: { id: string; row: Record<string, unknown> | null };
   dashboardDetail?: { id: string; row: Record<string, unknown> | null };
   // Returns the downstream edges for a given parent (table or dashboard).
   lineageByParent?: Map<string, LineageEdge[] | Error>;
-  tableSummary?: Map<string, { id: string; name?: string; popularity?: number; isDeprecated?: boolean; isVerified?: boolean }>;
-  dashboardSummary?: Map<string, { id: string; name?: string; popularity?: number; isDeprecated?: boolean; isVerified?: boolean }>;
+  tableSummary?: Map<string, DownstreamAssetMock>;
+  dashboardSummary?: Map<string, DownstreamAssetMock>;
   qualityForTable?: { tableId: string; rows: Array<{ status: string }>; totalCount?: number };
 }
 
@@ -59,7 +69,7 @@ function makeRouter(routes: RouterRoutes) {
       const rows = edges ?? [];
       return { getLineages: { totalCount: rows.length, data: rows } };
     }
-    if (document === GET_TABLES_SUMMARY) {
+    if (document === GET_TABLES_DETAIL_BATCH) {
       const vars = variables as { scope?: { ids?: string[] } };
       const ids = vars.scope?.ids ?? [];
       const data = ids
@@ -67,7 +77,7 @@ function makeRouter(routes: RouterRoutes) {
         .filter((r): r is NonNullable<typeof r> => Boolean(r));
       return { getTables: { totalCount: data.length, data } };
     }
-    if (document === GET_DASHBOARDS_SUMMARY) {
+    if (document === GET_DASHBOARDS_DETAIL_BATCH) {
       const vars = variables as { scope?: { ids?: string[] } };
       const ids = vars.scope?.ids ?? [];
       const data = ids
@@ -443,6 +453,149 @@ describe("catalog_assess_impact — error & not-found paths", () => {
 
     expect(res.isError).toBe(true);
     expect(parseResult(res).error).toMatch(/lineage backend down/);
+  });
+});
+
+describe("catalog_assess_impact — downstream ownership enrichment", () => {
+  it("populates teams + ownerCounts per downstream asset and aggregates distinct teams", async () => {
+    const client = makeRouter({
+      tableDetail: { id: "t-start", row: TABLE_ROW },
+      lineageByParent: new Map([
+        [
+          "t-start",
+          [
+            { childTableId: "t-d1", childDashboardId: null },
+            { childTableId: "t-d2", childDashboardId: null },
+            { childTableId: null, childDashboardId: "d-d1" },
+            { childTableId: "t-orphan", childDashboardId: null },
+          ],
+        ],
+      ]),
+      tableSummary: new Map([
+        [
+          "t-d1",
+          {
+            id: "t-d1",
+            name: "T_D1",
+            popularity: 0.5,
+            // Same team as the dashboard — should de-dupe.
+            teamOwnerEntities: [
+              { id: "to-1", teamId: "tm-sales", team: { name: "Sales" } },
+            ],
+            ownerEntities: [{ id: "o-1", userId: "u-1" }],
+          },
+        ],
+        [
+          "t-d2",
+          {
+            id: "t-d2",
+            name: "T_D2",
+            popularity: 0.4,
+            teamOwnerEntities: [
+              { id: "to-2", teamId: "tm-finance", team: { name: "Finance" } },
+            ],
+          },
+        ],
+        [
+          "t-orphan",
+          {
+            id: "t-orphan",
+            name: "T_ORPHAN",
+            popularity: 0.1,
+            // No owners.
+          },
+        ],
+      ]),
+      dashboardSummary: new Map([
+        [
+          "d-d1",
+          {
+            id: "d-d1",
+            name: "D_D1",
+            popularity: 0.7,
+            // Same team as t-d1.
+            teamOwnerEntities: [
+              { id: "to-3", teamId: "tm-sales", team: { name: "Sales" } },
+            ],
+          },
+        ],
+      ]),
+    });
+
+    const tool = defineAssessImpact(client);
+    const res = await tool.handler({
+      assetKind: "TABLE",
+      assetId: "t-start",
+      includeQualityChecks: false,
+    });
+
+    const out = parseResult(res);
+    const downstream = out.downstream as Record<string, unknown>;
+    expect(downstream.totalCount).toBe(4);
+    expect(downstream.distinctOwnerTeamCount).toBe(2);
+    expect(downstream.unownedCount).toBe(1);
+
+    const assets = downstream.assets as Array<Record<string, unknown>>;
+    const td1 = assets.find((a) => a.id === "t-d1") as Record<string, unknown>;
+    expect(td1.ownerUserCount).toBe(1);
+    expect(td1.ownerTeamCount).toBe(1);
+    expect(td1.teams).toEqual([
+      { id: "to-1", teamId: "tm-sales", name: "Sales" },
+    ]);
+
+    const orphan = assets.find((a) => a.id === "t-orphan") as Record<string, unknown>;
+    expect(orphan.ownerUserCount).toBe(0);
+    expect(orphan.ownerTeamCount).toBe(0);
+    expect(orphan.teams).toEqual([]);
+  });
+
+  it("counts an asset as unowned only when both ownerEntities and teamOwnerEntities are empty", async () => {
+    const client = makeRouter({
+      tableDetail: { id: "t-start", row: TABLE_ROW },
+      lineageByParent: new Map([
+        [
+          "t-start",
+          [
+            { childTableId: "t-user-only", childDashboardId: null },
+            { childTableId: "t-team-only", childDashboardId: null },
+            { childTableId: "t-no-owners", childDashboardId: null },
+          ],
+        ],
+      ]),
+      tableSummary: new Map([
+        [
+          "t-user-only",
+          {
+            id: "t-user-only",
+            name: "USER_ONLY",
+            popularity: 0.3,
+            ownerEntities: [{ id: "o-1", userId: "u-1" }],
+          },
+        ],
+        [
+          "t-team-only",
+          {
+            id: "t-team-only",
+            name: "TEAM_ONLY",
+            popularity: 0.3,
+            teamOwnerEntities: [{ id: "to-1", teamId: "tm-1", team: { name: "T" } }],
+          },
+        ],
+        [
+          "t-no-owners",
+          { id: "t-no-owners", name: "NO_OWNERS", popularity: 0.1 },
+        ],
+      ]),
+    });
+
+    const tool = defineAssessImpact(client);
+    const res = await tool.handler({
+      assetKind: "TABLE",
+      assetId: "t-start",
+      includeQualityChecks: false,
+    });
+    const out = parseResult(res);
+    expect((out.downstream as Record<string, unknown>).unownedCount).toBe(1);
   });
 });
 

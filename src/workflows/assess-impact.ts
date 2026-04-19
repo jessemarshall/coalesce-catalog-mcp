@@ -8,8 +8,8 @@ import {
   GET_TABLE_DETAIL,
   GET_DASHBOARD_DETAIL,
   GET_LINEAGES,
-  GET_TABLES_SUMMARY,
-  GET_DASHBOARDS_SUMMARY,
+  GET_TABLES_DETAIL_BATCH,
+  GET_DASHBOARDS_DETAIL_BATCH,
   GET_DATA_QUALITIES,
 } from "../catalog/operations.js";
 import type {
@@ -60,6 +60,12 @@ interface ReachedNode {
   depth: number;
 }
 
+interface OwnerTeamRef {
+  id: string;
+  teamId: string | null;
+  name: string | null;
+}
+
 interface EnrichedAsset {
   id: string;
   name: string | null;
@@ -68,6 +74,9 @@ interface EnrichedAsset {
   isDeprecated: boolean | null;
   isVerified: boolean | null;
   depth: number;
+  ownerUserCount: number;
+  ownerTeamCount: number;
+  teams: OwnerTeamRef[];
 }
 
 interface SeverityComponent {
@@ -160,6 +169,10 @@ async function enrichByKind(
   ids: string[],
   kind: AssetKind
 ): Promise<Map<string, Record<string, unknown>>> {
+  // Uses the *_DETAIL_BATCH variants so each downstream node carries its
+  // ownerEntities + teamOwnerEntities — needed to compute distinct owner
+  // counts for the blast-radius report. Cost is one batched call per kind
+  // (paginated by ENRICHMENT_BATCH_SIZE), not per asset.
   const map = new Map<string, Record<string, unknown>>();
   if (ids.length === 0) return map;
 
@@ -167,7 +180,7 @@ async function enrichByKind(
     const slice = ids.slice(i, i + ENRICHMENT_BATCH_SIZE);
     if (kind === "TABLE") {
       const resp = await client.execute<{ getTables: GetTablesOutput }>(
-        GET_TABLES_SUMMARY,
+        GET_TABLES_DETAIL_BATCH,
         {
           scope: { ids: slice },
           pagination: { nbPerPage: slice.length, page: 0 },
@@ -178,7 +191,7 @@ async function enrichByKind(
       }
     } else {
       const resp = await client.execute<{ getDashboards: GetDashboardsOutput }>(
-        GET_DASHBOARDS_SUMMARY,
+        GET_DASHBOARDS_DETAIL_BATCH,
         {
           scope: { ids: slice },
           pagination: { nbPerPage: slice.length, page: 0 },
@@ -190,6 +203,23 @@ async function enrichByKind(
     }
   }
   return map;
+}
+
+function extractTeams(row: Record<string, unknown> | undefined): OwnerTeamRef[] {
+  if (!row || !Array.isArray(row.teamOwnerEntities)) return [];
+  return (row.teamOwnerEntities as Array<Record<string, unknown>>).map((t) => {
+    const team = t.team as Record<string, unknown> | undefined;
+    return {
+      id: t.id as string,
+      teamId: (t.teamId as string | null) ?? null,
+      name: (team?.name as string | null) ?? null,
+    };
+  });
+}
+
+function userOwnerCount(row: Record<string, unknown> | undefined): number {
+  if (!row || !Array.isArray(row.ownerEntities)) return 0;
+  return (row.ownerEntities as unknown[]).length;
 }
 
 function computeSeverity(opts: {
@@ -314,7 +344,8 @@ export function defineAssessImpact(
     config: {
       title: "Assess Blast Radius (Deprecation Impact Report)",
       description:
-        "Composed deprecation-impact report for a TABLE or DASHBOARD: walks downstream lineage to the requested depth, batch-enriches every reached asset with name + popularity, attaches the starting asset's ownership + tags + quality-check coverage, and returns a 0-100 severity score with explicit per-component rationale.\n\n" +
+        "Composed deprecation-impact report for a TABLE or DASHBOARD: walks downstream lineage to the requested depth, batch-enriches every reached asset with name + popularity + ownership (teams + user count), attaches the starting asset's ownership + tags + quality-check coverage, and returns a 0-100 severity score with explicit per-component rationale.\n\n" +
+        "Each downstream row carries `teams: [{id, teamId, name}]` plus `ownerUserCount` / `ownerTeamCount`. The aggregate exposes `distinctOwnerTeamCount` (how many independent teams need to be coordinated with for a deprecation) and `unownedCount` (orphaned downstream assets — likely no one will notice they break, but also no one will fix them).\n\n" +
         "**Completeness contract:** at any given depth, the report is exhaustive — there is no silent truncation. If the downstream graph at depth 2 exceeds 2000 distinct nodes (or 500 at depth 3), the tool refuses with an actionable error rather than returning a partial answer. Use depth=1 first on wide hubs to identify hotspots and assess them individually.\n\n" +
         "Severity rubric (deterministic, transparent in `rationale[]`):\n" +
         "  - downstream_impact: 0-60 pts, log-scaled by reached-asset count\n" +
@@ -404,6 +435,7 @@ export function defineAssessImpact(
           node.kind === "TABLE"
             ? tableEnrichment.get(id)
             : dashboardEnrichment.get(id);
+        const teams = extractTeams(row);
         enriched.push({
           id,
           name: (row?.name as string | null) ?? null,
@@ -412,6 +444,9 @@ export function defineAssessImpact(
           isDeprecated: (row?.isDeprecated as boolean | null) ?? null,
           isVerified: (row?.isVerified as boolean | null) ?? null,
           depth: node.depth,
+          ownerUserCount: userOwnerCount(row),
+          ownerTeamCount: teams.length,
+          teams,
         });
       }
       enriched.sort(
@@ -426,6 +461,18 @@ export function defineAssessImpact(
       const downstreamDashboards = enriched.filter(
         (a) => a.kind === "DASHBOARD"
       );
+
+      // Distinct owner-team count = how many independent teams will be
+      // affected by deprecating this asset. Counts each unique teamId once
+      // across the entire downstream graph.
+      const distinctTeamIds = new Set<string>();
+      let unownedAssetCount = 0;
+      for (const a of enriched) {
+        if (a.ownerTeamCount === 0 && a.ownerUserCount === 0) unownedAssetCount += 1;
+        for (const t of a.teams) {
+          if (t.teamId) distinctTeamIds.add(t.teamId);
+        }
+      }
 
       const severity = computeSeverity({
         downstreamCount,
@@ -465,6 +512,8 @@ export function defineAssessImpact(
           dashboardCount: downstreamDashboards.length,
           deprecatedCount: enriched.filter((a) => a.isDeprecated === true)
             .length,
+          unownedCount: unownedAssetCount,
+          distinctOwnerTeamCount: distinctTeamIds.size,
           assets: enriched,
         },
         qualityChecks: summariseQualityStatuses(
