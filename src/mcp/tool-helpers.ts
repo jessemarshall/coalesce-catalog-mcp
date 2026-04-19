@@ -40,16 +40,30 @@ export function withErrorHandling<TArgs extends Record<string, unknown>>(
  * Normalise a list-query GraphQL output into a uniform envelope for MCP
  * responses. Callers provide the raw data array and pagination metadata;
  * the envelope surfaces `hasMore` so the LLM can decide whether to paginate.
+ *
+ * When `totalCount` is `null` (the GraphQL endpoint doesn't return it),
+ * `hasMore` is inferred from whether the page is full, and `totalCount`
+ * is omitted from the output to avoid misleading the agent.
  */
 export function listEnvelope<T>(
   page: number,
   nbPerPage: number,
-  totalCount: number,
+  totalCount: number | null,
   data: T[]
 ): {
-  pagination: { page: number; nbPerPage: number; totalCount: number; hasMore: boolean };
+  pagination: { page: number; nbPerPage: number; totalCount?: number; hasMore: boolean };
   data: T[];
 } {
+  if (totalCount === null) {
+    return {
+      pagination: {
+        page,
+        nbPerPage,
+        hasMore: data.length >= nbPerPage,
+      },
+      data,
+    };
+  }
   const seenSoFar = page * nbPerPage + data.length;
   return {
     pagination: {

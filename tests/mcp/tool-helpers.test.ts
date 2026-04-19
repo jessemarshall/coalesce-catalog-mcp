@@ -40,4 +40,27 @@ describe("listEnvelope", () => {
     expect(env.pagination.hasMore).toBe(false);
     expect(env.data).toHaveLength(0);
   });
+
+  it("infers hasMore=true when totalCount is null and page is full", () => {
+    const env = listEnvelope(
+      0,
+      10,
+      null,
+      Array.from({ length: 10 }, (_, i) => ({ id: String(i) }))
+    );
+    expect(env.pagination.hasMore).toBe(true);
+    expect(env.pagination.totalCount).toBeUndefined();
+  });
+
+  it("infers hasMore=false when totalCount is null and page is partial", () => {
+    const env = listEnvelope(0, 10, null, [{ id: "a" }, { id: "b" }]);
+    expect(env.pagination.hasMore).toBe(false);
+    expect(env.pagination.totalCount).toBeUndefined();
+  });
+
+  it("infers hasMore=false when totalCount is null and page is empty", () => {
+    const env = listEnvelope(0, 10, null, []);
+    expect(env.pagination.hasMore).toBe(false);
+    expect(env.pagination.totalCount).toBeUndefined();
+  });
 });
