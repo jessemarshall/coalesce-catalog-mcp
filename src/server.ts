@@ -14,6 +14,7 @@ import { defineFindAssetByPath } from "./workflows/find-asset-by-path.js";
 import { defineSummarizeAsset } from "./workflows/summarize-asset.js";
 import { defineTraceMissingLineage } from "./workflows/trace-missing-lineage.js";
 import { defineAssessImpact } from "./workflows/assess-impact.js";
+import { defineGovernanceScorecard } from "./workflows/governance-scorecard.js";
 import { registerCatalogResources } from "./resources/index.js";
 import { registerCatalogPrompts } from "./prompts/index.js";
 
@@ -78,6 +79,7 @@ export function createCoalesceCatalogMcpServer(
     defineSummarizeAsset(client),
     defineTraceMissingLineage(client),
     defineAssessImpact(client),
+    defineGovernanceScorecard(client),
   ];
 
   for (const def of definitions) {

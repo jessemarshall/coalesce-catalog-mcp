@@ -135,6 +135,27 @@ export const GET_TABLE_DETAIL = /* GraphQL */ `
   }
 `;
 
+// Batch variant of TABLE_DETAIL — same fieldset, but server-side paginated so
+// callers can fetch many tables' descriptions/owners/tags in one call. Used
+// by the governance scorecard; the per-row TABLE_DETAIL above stays scoped to
+// a single id for direct asset-lookup tools.
+export const GET_TABLES_DETAIL_BATCH = /* GraphQL */ `
+  query CatalogGetTablesDetailBatch(
+    $scope: GetTablesScope
+    $sorting: [TableSorting!]
+    $pagination: Pagination
+  ) {
+    getTables(scope: $scope, sorting: $sorting, pagination: $pagination) {
+      totalCount
+      nbPerPage
+      page
+      data {
+        ${TABLE_DETAIL_FIELDS}
+      }
+    }
+  }
+`;
+
 // ── AI: semantic query search + assistant ───────────────────────────────
 
 export const SEARCH_QUERIES = /* GraphQL */ `
