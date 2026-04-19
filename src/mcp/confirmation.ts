@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { CatalogClient } from "../client.js";
 import {
+  declineResult,
   errorResult,
   type ToolHandlerExtra,
 } from "../catalog/types.js";
@@ -13,12 +14,20 @@ import { ToolEarlyReturn } from "./tool-helpers.js";
  * the SDK's full ElicitResultSchema — its zod shape is awkwardly tied to
  * generated unions, and our minimal schema accepts the same wire payload.
  */
-const ElicitResponseSchema = z.object({
-  action: z.enum(["accept", "decline", "cancel"]),
-  content: z
-    .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
-    .optional(),
-});
+const ElicitResponseSchema = z
+  .object({
+    action: z.enum(["accept", "decline", "cancel"]),
+    // MCP spec allows primitive values in content. We accept nulls (some
+    // clients send unset fields as null) and passthrough unknown keys so
+    // future spec additions don't flip valid accepts to elicitation_failed.
+    content: z
+      .record(
+        z.string(),
+        z.union([z.string(), z.number(), z.boolean(), z.null()])
+      )
+      .optional(),
+  })
+  .passthrough();
 
 export interface ConfirmationOptions<TArgs extends Record<string, unknown>> {
   /** Short label for the action — shown in the dialog header. */
@@ -118,8 +127,10 @@ export function withConfirmation<TArgs extends Record<string, unknown>>(
     }
 
     if (response.action !== "accept" || response.content?.confirm !== true) {
+      // Non-error result: a decline is expected user behaviour, not a tool
+      // failure. Clients filtering on isError shouldn't trigger retries.
       throw new ToolEarlyReturn(
-        errorResult(
+        declineResult(
           `User did not confirm "${options.action}" — no changes were made.`,
           { kind: "user_declined", action: response.action }
         )

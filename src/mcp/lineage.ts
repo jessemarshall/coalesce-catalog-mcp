@@ -298,6 +298,24 @@ interface HydratedEndpoint {
   hydrationUnavailable?: boolean;
 }
 
+// A single 500-row page of lineage edges can reference 600–1000 distinct IDs
+// (each edge contributes two endpoints). Fetch hydration in batches of this
+// size so no ID past the first page is silently dropped to an unnamed fallback.
+const HYDRATION_BATCH_SIZE = 500;
+
+async function fetchHydrationBatches<T>(
+  ids: string[],
+  fetchBatch: (batch: string[]) => Promise<T[]>
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < ids.length; i += HYDRATION_BATCH_SIZE) {
+    const batch = ids.slice(i, i + HYDRATION_BATCH_SIZE);
+    const rows = await fetchBatch(batch);
+    out.push(...rows);
+  }
+  return out;
+}
+
 async function hydrateAssetLineages(
   client: CatalogClient,
   edges: Lineage[]
@@ -314,30 +332,37 @@ async function hydrateAssetLineages(
   const tasks: Promise<unknown>[] = [];
   if (tableIds.size > 0) {
     tasks.push(
-      client
-        .execute<{ getTables: GetTablesOutput }>(GET_TABLES_SUMMARY, {
-          scope: { ids: [...tableIds] },
-          pagination: { nbPerPage: Math.min(500, tableIds.size), page: 0 },
-        })
-        .then((r) => {
-          for (const t of r.getTables.data) {
-            map.set(t.id, { id: t.id, kind: "TABLE", name: t.name });
+      fetchHydrationBatches([...tableIds], async (batch) => {
+        const r = await client.execute<{ getTables: GetTablesOutput }>(
+          GET_TABLES_SUMMARY,
+          {
+            scope: { ids: batch },
+            pagination: { nbPerPage: batch.length, page: 0 },
           }
-        })
+        );
+        return r.getTables.data;
+      }).then((rows) => {
+        for (const t of rows) {
+          map.set(t.id, { id: t.id, kind: "TABLE", name: t.name });
+        }
+      })
     );
   }
   if (dashboardIds.size > 0) {
     tasks.push(
-      client
-        .execute<{ getDashboards: GetDashboardsOutput }>(GET_DASHBOARDS_SUMMARY, {
-          scope: { ids: [...dashboardIds] },
-          pagination: { nbPerPage: Math.min(500, dashboardIds.size), page: 0 },
-        })
-        .then((r) => {
-          for (const d of r.getDashboards.data) {
-            map.set(d.id, { id: d.id, kind: "DASHBOARD", name: d.name });
-          }
-        })
+      fetchHydrationBatches([...dashboardIds], async (batch) => {
+        const r = await client.execute<{
+          getDashboards: GetDashboardsOutput;
+        }>(GET_DASHBOARDS_SUMMARY, {
+          scope: { ids: batch },
+          pagination: { nbPerPage: batch.length, page: 0 },
+        });
+        return r.getDashboards.data;
+      }).then((rows) => {
+        for (const d of rows) {
+          map.set(d.id, { id: d.id, kind: "DASHBOARD", name: d.name });
+        }
+      })
     );
   }
   await Promise.all(tasks);
@@ -364,35 +389,42 @@ async function hydrateFieldLineages(
   const tasks: Promise<unknown>[] = [];
   if (columnIds.size > 0) {
     tasks.push(
-      client
-        .execute<{ getColumns: GetColumnsOutput }>(GET_COLUMNS_SUMMARY, {
-          scope: { ids: [...columnIds] },
-          pagination: { nbPerPage: Math.min(500, columnIds.size), page: 0 },
-        })
-        .then((r) => {
-          for (const c of r.getColumns.data) {
-            map.set(c.id, {
-              id: c.id,
-              kind: "COLUMN",
-              name: c.name,
-              parentId: c.tableId,
-            });
+      fetchHydrationBatches([...columnIds], async (batch) => {
+        const r = await client.execute<{ getColumns: GetColumnsOutput }>(
+          GET_COLUMNS_SUMMARY,
+          {
+            scope: { ids: batch },
+            pagination: { nbPerPage: batch.length, page: 0 },
           }
-        })
+        );
+        return r.getColumns.data;
+      }).then((rows) => {
+        for (const c of rows) {
+          map.set(c.id, {
+            id: c.id,
+            kind: "COLUMN",
+            name: c.name,
+            parentId: c.tableId,
+          });
+        }
+      })
     );
   }
   if (dashboardIds.size > 0) {
     tasks.push(
-      client
-        .execute<{ getDashboards: GetDashboardsOutput }>(GET_DASHBOARDS_SUMMARY, {
-          scope: { ids: [...dashboardIds] },
-          pagination: { nbPerPage: Math.min(500, dashboardIds.size), page: 0 },
-        })
-        .then((r) => {
-          for (const d of r.getDashboards.data) {
-            map.set(d.id, { id: d.id, kind: "DASHBOARD", name: d.name });
-          }
-        })
+      fetchHydrationBatches([...dashboardIds], async (batch) => {
+        const r = await client.execute<{
+          getDashboards: GetDashboardsOutput;
+        }>(GET_DASHBOARDS_SUMMARY, {
+          scope: { ids: batch },
+          pagination: { nbPerPage: batch.length, page: 0 },
+        });
+        return r.getDashboards.data;
+      }).then((rows) => {
+        for (const d of rows) {
+          map.set(d.id, { id: d.id, kind: "DASHBOARD", name: d.name });
+        }
+      })
     );
   }
   // Dashboard fields can't be hydrated via the public API — there's no

@@ -93,8 +93,10 @@ describe("withConfirmation — decline / cancel", () => {
       extra
     );
 
-    expect(result.isError).toBe(true);
+    // Decline is user-expected behaviour, not a tool failure — no isError.
+    expect(result.isError).toBeFalsy();
     expect(parse(result).error).toMatch(/did not confirm/i);
+    expect(parse(result).detail).toMatchObject({ kind: "user_declined" });
     expect(client.calls).toHaveLength(0);
   });
 
@@ -114,7 +116,8 @@ describe("withConfirmation — decline / cancel", () => {
       extra
     );
 
-    expect(result.isError).toBe(true);
+    expect(result.isError).toBeFalsy();
+    expect(parse(result).detail).toMatchObject({ kind: "user_declined" });
     expect(client.calls).toHaveLength(0);
   });
 });

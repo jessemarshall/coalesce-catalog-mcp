@@ -146,14 +146,20 @@ export function defineTraceMissingLineage(
         });
       }
 
-      // (3) Provenance — all-manual is a tell
+      // (3) Provenance — all-manual is a tell. We only sample the first page
+      // (500 edges) of upstream lineage; when totalCount exceeds that, surface
+      // that caveat in the finding so the caller doesn't treat it as exhaustive.
       if (upstream && upstream.data.length > 0) {
         const dominant = dominantLineageType(upstream.data);
         if (dominant && dominant !== "AUTOMATIC") {
+          const truncated = upstream.data.length < upstream.totalCount;
+          const scopeLabel = truncated
+            ? `in the first ${upstream.data.length} of ${upstream.totalCount} upstream edges (sampled)`
+            : "across all upstream edges";
           findings.push({
             severity: "warning",
             code: "upstream_lineage_all_manual",
-            message: `Dominant upstream lineage type is ${dominant} (not AUTOMATIC).`,
+            message: `Dominant upstream lineage type is ${dominant} (not AUTOMATIC) ${scopeLabel}.`,
             recommendation:
               "Automatic lineage detection may have missed this table's dependencies. Validate that the source warehouse is ingested correctly, or keep relying on manual edges.",
           });
@@ -213,7 +219,22 @@ export function defineTraceMissingLineage(
           details,
         };
 
-        if (valid.length > 0 && coveragePct === 0) {
+        if (details.length > 0 && valid.length === 0) {
+          // Every field-lineage probe rejected. Without this finding the only
+          // signal is sampledColumnCount=0 buried inside fieldLineageCoverage.
+          const firstError = details.find((d) => d.upstreamCount === -1);
+          findings.push({
+            severity: "alert",
+            code: "field_lineage_probe_failed",
+            message: `Could not probe field-lineage for any of the ${details.length} sampled columns — every call failed.`,
+            recommendation:
+              "Field-lineage endpoint may be unhealthy or unavailable for this tenant. " +
+              (firstError
+                ? `Example column: ${firstError.columnId}. `
+                : "") +
+              "Retry later or check extraction pipeline status.",
+          });
+        } else if (valid.length > 0 && coveragePct === 0) {
           findings.push({
             severity: "alert",
             code: "no_field_lineage",

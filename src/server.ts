@@ -62,6 +62,9 @@ TOOLING NOTES
   Start with nbPerPage=25-100 and page=0; only fetch deeper pages on demand.
 - Read-only mode: set COALESCE_CATALOG_READ_ONLY=true to drop all mutation
   tools at registration time. Default is read-write.
+- Destructive tools (delete/remove/detach) request interactive confirmation
+  via MCP elicitation. Set COALESCE_CATALOG_SKIP_CONFIRMATIONS=true to
+  bypass — only safe for vetted, non-interactive callers (CI, batch jobs).
 `.trim();
 
 /**
@@ -98,12 +101,18 @@ export function createCoalesceCatalogMcpServer(
     defineGovernanceScorecard(client),
   ];
 
+  type RegisterToolHandler = Parameters<McpServer["registerTool"]>[2];
   for (const def of definitions) {
     if (readOnly && !isReadOnlyTool(def)) continue;
     // SDK's handler type demands an index signature on the return; our
-    // narrower ToolResult is structurally compatible but needs a cast.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    server.registerTool(def.name, def.config, def.handler as any);
+    // narrower ToolResult is structurally compatible. Casting through the
+    // SDK's exact handler param type (not `any`) keeps future SDK changes
+    // surfacing at compile time.
+    server.registerTool(
+      def.name,
+      def.config,
+      def.handler as unknown as RegisterToolHandler
+    );
   }
 
   registerCatalogResources(server);

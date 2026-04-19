@@ -99,9 +99,23 @@ function lineageEnvelope(
   return {
     totalCount: out.totalCount,
     returned: out.data.length,
-    hasMore: out.data.length < out.totalCount,
+    // If the server ever returns a non-numeric totalCount we fall back to
+    // "did we fill the page?" — `hasMore: data.length < null` would be false,
+    // falsely signalling completeness.
+    hasMore: hasMoreFrom(out.data.length, out.totalCount, limit),
     sample: out.data.slice(0, limit),
   };
+}
+
+function hasMoreFrom(
+  returned: number,
+  totalCount: number | null | undefined,
+  requestedLimit: number
+): boolean {
+  if (typeof totalCount === "number" && Number.isFinite(totalCount)) {
+    return returned < totalCount;
+  }
+  return returned >= requestedLimit;
 }
 
 export function defineSummarizeAsset(
@@ -113,7 +127,7 @@ export function defineSummarizeAsset(
       title: "Summarize Asset (One-Call Overview)",
       description:
         "Produce a consolidated cross-domain summary for a TABLE or DASHBOARD asset in a single call: core identity + description, ownership (users + teams), tags, upstream + downstream lineage edges (with totalCount so you know whether to paginate), and — for tables — columns and recent quality-check rows.\n\n" +
-        "Issues up to 5 underlying GraphQL queries in parallel. Use this to get full context on one asset without chaining 4-5 tool calls yourself. Limits are per-sub-query; set them to 0 to skip sections entirely.",
+        "Issues up to 5 underlying GraphQL queries in parallel for a TABLE (detail + upstream + downstream + columns + quality), or up to 3 for a DASHBOARD (detail + upstream + downstream). Use this to get full context on one asset without chaining multiple tool calls. Limits are per-sub-query; set them to 0 to skip sections entirely.",
       inputSchema: SummarizeAssetInputShape,
       annotations: READ_ONLY_ANNOTATIONS,
     },
@@ -288,9 +302,11 @@ export function defineSummarizeAsset(
             ? {
                 totalCount: columns.value.getColumns.totalCount,
                 returned: columns.value.getColumns.data.length,
-                hasMore:
-                  columns.value.getColumns.data.length <
+                hasMore: hasMoreFrom(
+                  columns.value.getColumns.data.length,
                   columns.value.getColumns.totalCount,
+                  columnsLimit
+                ),
                 sample: columns.value.getColumns.data,
               }
             : { skipped: true };
@@ -300,9 +316,11 @@ export function defineSummarizeAsset(
             ? {
                 totalCount: quality.value.getDataQualities.totalCount,
                 returned: quality.value.getDataQualities.data.length,
-                hasMore:
-                  quality.value.getDataQualities.data.length <
+                hasMore: hasMoreFrom(
+                  quality.value.getDataQualities.data.length,
                   quality.value.getDataQualities.totalCount,
+                  qualityLimit
+                ),
                 sample: quality.value.getDataQualities.data,
               }
             : { skipped: true };

@@ -25,14 +25,13 @@ const FilterTablesModeSchema = z.enum([
   "ANY",
 ]) satisfies z.ZodType<FilterTablesMode>;
 
-const OriginSchema = z.enum([
-  "API",
-  "APP",
-  "DUST",
-  "EXTENSION",
-  "MS_TEAMS",
-  "SLACK_BOT",
-]) satisfies z.ZodType<Origin>;
+// The Origin enum has 6 values but the server docstring on `origin` states
+// "only API or DUST allowed" — passing any other value is rejected at runtime
+// with a server-side BAD_USER_INPUT. Restrict client-side to the two accepted
+// values so the LLM doesn't have to discover the gap via failed calls.
+const OriginSchema = z.enum(["API", "DUST"]) satisfies z.ZodType<
+  Extract<Origin, "API" | "DUST">
+>;
 
 // ── Semantic query search ───────────────────────────────────────────────────
 
@@ -92,7 +91,7 @@ const AskAssistantInputShape = {
       "Conversation key (any string) used to thread multi-turn context. Reuse across messages to maintain continuity; change to start a fresh conversation."
     ),
   origin: OriginSchema.optional().describe(
-    "Where the question is coming from. Defaults to API when omitted. Allowed: API, APP, DUST, EXTENSION, MS_TEAMS, SLACK_BOT."
+    "Where the question is coming from. Defaults to API when omitted. Server only accepts API or DUST despite the GraphQL enum defining more values."
   ),
 };
 
