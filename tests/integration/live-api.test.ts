@@ -204,4 +204,109 @@ describeLive("live API integration (requires COALESCE_CATALOG_API_KEY)", () => {
     // assertion is we don't crash / hang.
     expect(res.content[0].text).toBeTruthy();
   }, 30000);
+
+  // Smoke tests for hand-written GraphQL operations introduced for the
+  // composed workflow tools (GET_TABLES_DETAIL_BATCH, GET_DASHBOARDS_DETAIL_BATCH).
+  // Unit tests cover the handler logic; these confirm the field selections
+  // are valid against the real Castor schema.
+
+  it("catalog_assess_impact returns a populated severity report at depth 2", async () => {
+    const resolve = await callTool("catalog_find_asset_by_path", {
+      path: TABLE_PATH,
+    });
+    const id = JSON.parse(resolve.content[0].text).resolved.id;
+
+    const impact = await callTool("catalog_assess_impact", {
+      assetKind: "TABLE",
+      assetId: id,
+      maxDepth: 2,
+      includeQualityChecks: true,
+    });
+    expect(impact.isError).not.toBe(true);
+    const obj = JSON.parse(impact.content[0].text);
+
+    // Asset core wired up.
+    expect(obj.asset?.id).toBe(id);
+    expect(obj.asset?.kind).toBe("TABLE");
+    expect(obj.ownership).toBeDefined();
+    expect(obj.tags).toBeDefined();
+
+    // Downstream summary always present, even when count is 0.
+    expect(obj.downstream).toBeDefined();
+    expect(typeof obj.downstream.totalCount).toBe("number");
+    expect(typeof obj.downstream.distinctOwnerTeamCount).toBe("number");
+    expect(typeof obj.downstream.unownedCount).toBe("number");
+    expect(Array.isArray(obj.downstream.assets)).toBe(true);
+    // Shape of each enriched asset (only assert when downstream is non-empty;
+    // a leaf table is a valid universe state we shouldn't fail on).
+    if (obj.downstream.assets.length > 0) {
+      const first = obj.downstream.assets[0];
+      expect(first.id).toBeTruthy();
+      expect(["TABLE", "DASHBOARD"]).toContain(first.kind);
+      expect(typeof first.ownerUserCount).toBe("number");
+      expect(typeof first.ownerTeamCount).toBe("number");
+      expect(Array.isArray(first.teams)).toBe(true);
+      expect(typeof first.depth).toBe("number");
+    }
+
+    // Severity scoring deterministic + transparent.
+    expect(obj.severity?.bucket).toMatch(/^(low|medium|high)$/);
+    expect(typeof obj.severity?.score).toBe("number");
+    expect(obj.severity.score).toBeGreaterThanOrEqual(0);
+    expect(obj.severity.score).toBeLessThanOrEqual(100);
+    expect(Array.isArray(obj.severity?.rationale)).toBe(true);
+    expect(obj.severity.rationale).toHaveLength(3);
+
+    // Quality coverage requested → present (may be empty).
+    expect(obj.qualityChecks).not.toBeNull();
+  }, 60000);
+
+  it("catalog_governance_scorecard returns a coverage matrix scoped to the test schema", async () => {
+    // Resolve the test table → grab its schemaId via catalog_get_table.
+    const resolve = await callTool("catalog_find_asset_by_path", {
+      path: TABLE_PATH,
+    });
+    const tableId = JSON.parse(resolve.content[0].text).resolved.id;
+
+    const detail = await callTool("catalog_get_table", { id: tableId });
+    const tableObj = JSON.parse(detail.content[0].text).table;
+    const schemaId = tableObj?.schema?.id ?? tableObj?.schemaId;
+    expect(schemaId).toBeTruthy();
+
+    const scorecard = await callTool("catalog_governance_scorecard", {
+      schemaId,
+      includeQualityCoverage: true,
+    });
+    expect(scorecard.isError).not.toBe(true);
+    const obj = JSON.parse(scorecard.content[0].text);
+
+    expect(obj.scopedBy).toBe("schemaId");
+    expect(typeof obj.tableCount).toBe("number");
+    expect(Array.isArray(obj.tables)).toBe(true);
+    expect(obj.tables.length).toBe(obj.tableCount);
+
+    // Aggregate well-formed under the requested 5-axis matrix.
+    expect(obj.aggregate).toBeDefined();
+    expect(obj.aggregate.axes).toEqual([
+      "owned",
+      "described",
+      "tagged",
+      "columnDoc",
+      "checked",
+    ]);
+    expect(obj.aggregate.governanceScore).toBeGreaterThanOrEqual(0);
+    expect(obj.aggregate.governanceScore).toBeLessThanOrEqual(100);
+
+    if (obj.tables.length > 0) {
+      const row = obj.tables[0];
+      expect(row.id).toBeTruthy();
+      expect(typeof row.hasOwner).toBe("boolean");
+      expect(typeof row.hasDescription).toBe("boolean");
+      expect(typeof row.tagCount).toBe("number");
+      expect(typeof row.qualityCheckCount).toBe("number");
+      expect(typeof row.hasQualityCheck).toBe("boolean");
+      // columnDocCoverage is the per-table object; either coverage data or an error envelope.
+      expect(row.columnDocCoverage).toBeDefined();
+    }
+  }, 90000);
 });
