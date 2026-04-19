@@ -1,5 +1,16 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 export const SERVER_NAME = "coalesce-catalog";
-export const SERVER_VERSION = "0.1.0";
+
+// Read from package.json so the MCP handshake always advertises the shipped
+// version — hard-coding drifted at every release. Works in both dev (src/)
+// and prod (dist/) because ../package.json resolves identically from either.
+const pkgUrl = new URL("../package.json", import.meta.url);
+const pkg = JSON.parse(readFileSync(fileURLToPath(pkgUrl), "utf8")) as {
+  version: string;
+};
+export const SERVER_VERSION = pkg.version;
 
 export type CatalogRegion = "eu" | "us";
 
