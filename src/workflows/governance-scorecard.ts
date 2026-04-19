@@ -29,7 +29,7 @@ const ScorecardInputShape = {
     .array(z.string())
     .optional()
     .describe(
-      "Scope the scorecard to an explicit list of table UUIDs (max 500). Mutually exclusive with databaseId/schemaId — if multiple are passed, the most-specific wins (tableIds > schemaId > databaseId)."
+      "Scope the scorecard to an explicit list of table UUIDs (max 500). Mutually exclusive with databaseId/schemaId — passing more than one scope field is refused."
     ),
   weighting: z
     .enum(["popularity", "equal"])
@@ -55,6 +55,7 @@ const ScorecardInputShape = {
 };
 
 const TABLE_HARD_CAP = 500;
+const TABLE_PAGE_SIZE = 100;
 const TABLE_BATCH_SIZE = 50;
 const COLUMN_PAGE_SIZE = 500;
 const QUALITY_PARALLELISM = 20;
@@ -104,24 +105,44 @@ function pickScope(args: {
   schemaId?: unknown;
   tableIds?: unknown;
 }): ScopedFilter | null {
-  // Most-specific wins. Validated up front so the user gets a clear error
-  // instead of silently mis-scoping.
-  if (Array.isArray(args.tableIds) && args.tableIds.length > 0) {
-    if (args.tableIds.length > TABLE_HARD_CAP) {
+  // The docstring says these are mutually exclusive. Reject combinations
+  // loudly rather than silently applying most-specific-wins — a caller who
+  // passes both tableIds and databaseId almost certainly made a mistake, and
+  // silently ignoring the databaseId would produce a scorecard scoped much
+  // more narrowly than the caller intended.
+  const provided: string[] = [];
+  const hasTableIds = Array.isArray(args.tableIds) && args.tableIds.length > 0;
+  const hasSchemaId = typeof args.schemaId === "string";
+  const hasDatabaseId = typeof args.databaseId === "string";
+  if (hasTableIds) provided.push("tableIds");
+  if (hasSchemaId) provided.push("schemaId");
+  if (hasDatabaseId) provided.push("databaseId");
+  if (provided.length > 1) {
+    throw new Error(
+      `Multiple scope fields supplied (${provided.join(", ")}); pass exactly one ` +
+        `of databaseId, schemaId, or tableIds.`
+    );
+  }
+  if (hasTableIds) {
+    const ids = args.tableIds as string[];
+    if (ids.length > TABLE_HARD_CAP) {
       // Enforce the documented max here rather than relying on the post-fetch
       // totalCount check — a server-side ids cap could silently drop the tail.
       throw new Error(
-        `tableIds (${args.tableIds.length}) exceeds the ${TABLE_HARD_CAP}-table ` +
+        `tableIds (${ids.length}) exceeds the ${TABLE_HARD_CAP}-table ` +
           `scorecard cap. Split into smaller batches and merge the results client-side.`
       );
     }
-    return { field: "tableIds", filter: { ids: args.tableIds as string[] } };
+    return { field: "tableIds", filter: { ids } };
   }
-  if (typeof args.schemaId === "string") {
-    return { field: "schemaId", filter: { schemaId: args.schemaId } };
+  if (hasSchemaId) {
+    return { field: "schemaId", filter: { schemaId: args.schemaId as string } };
   }
-  if (typeof args.databaseId === "string") {
-    return { field: "databaseId", filter: { databaseId: args.databaseId } };
+  if (hasDatabaseId) {
+    return {
+      field: "databaseId",
+      filter: { databaseId: args.databaseId as string },
+    };
   }
   return null;
 }
@@ -200,7 +221,14 @@ async function fetchColumnsForTableBatch(
     }
     const fetchedSoFar = (page + 1) * COLUMN_PAGE_SIZE;
     if (rows.length < COLUMN_PAGE_SIZE) break;
-    if (fetchedSoFar >= resp.getColumns.totalCount) break;
+    const columnsTotal = resp.getColumns.totalCount;
+    if (typeof columnsTotal !== "number" || !Number.isFinite(columnsTotal)) {
+      throw new Error(
+        `getColumns returned non-numeric totalCount (${String(columnsTotal)}) ` +
+          `for tableIds batch of ${tableIds.length}; cannot verify pagination completeness.`
+      );
+    }
+    if (fetchedSoFar >= columnsTotal) break;
     // If every table in the batch has hit its cap, additional rows would all
     // be skipped — stop paginating.
     if ([...counts.values()].every((c) => c.capped)) break;
@@ -355,7 +383,7 @@ export function defineGovernanceScorecard(
       title: "Governance Coverage Scorecard",
       description:
         "Compute a governance coverage matrix across a scoped set of tables: per-table flags for ownership, description, column-doc coverage %, and tag count, plus a popularity-weighted aggregate roll-up.\n\n" +
-        "Scope is required — pass exactly one of `databaseId`, `schemaId`, or `tableIds` (most-specific wins if multiple are set). The tool refuses if the scope resolves to >500 tables; narrow with `schemaId` or `tableIds` when scoping a large database.\n\n" +
+        "Scope is required — pass exactly one of `databaseId`, `schemaId`, or `tableIds`. Passing more than one is a refusal (explicit, not silent). The tool refuses if the scope resolves to >500 tables; narrow with `schemaId` or `tableIds` when scoping a large database.\n\n" +
         "Coverage methodology:\n" +
         "  - hasOwner: any user OR team owner attached.\n" +
         "  - hasDescription: non-empty `description` field (Catalog or external source).\n" +
@@ -386,25 +414,58 @@ export function defineGovernanceScorecard(
         (args.includeQualityCoverage as boolean | undefined) ?? false;
 
       // Fetch the in-scope tables with detail fields (owners + tags + description).
-      const tablesResp = await c.execute<{ getTables: GetTablesOutput }>(
+      // Paginate because the server may clamp nbPerPage below TABLE_HARD_CAP;
+      // a single-page fetch would silently truncate the scorecard universe and
+      // break the "complete or refuse" contract.
+      const firstPage = await c.execute<{ getTables: GetTablesOutput }>(
         GET_TABLES_DETAIL_BATCH,
         {
           scope: scope.filter,
           sorting: [{ sortingKey: "popularity", direction: "DESC" }],
-          pagination: { nbPerPage: TABLE_HARD_CAP, page: 0 },
+          pagination: { nbPerPage: TABLE_PAGE_SIZE, page: 0 },
         }
       );
-      const out = tablesResp.getTables;
-
-      if (out.totalCount > TABLE_HARD_CAP) {
-        // Same reasoning as the scope-required throw above.
+      const totalCount = firstPage.getTables.totalCount;
+      if (typeof totalCount !== "number" || !Number.isFinite(totalCount)) {
         throw new Error(
-          `Scope resolves to ${out.totalCount} tables (scoped by ${scope.field}), ` +
+          `getTables returned non-numeric totalCount (${String(totalCount)}) ` +
+            `for scorecard scope=${scope.field}; cannot establish a complete universe.`
+        );
+      }
+      if (totalCount > TABLE_HARD_CAP) {
+        throw new Error(
+          `Scope resolves to ${totalCount} tables (scoped by ${scope.field}), ` +
             `exceeding the ${TABLE_HARD_CAP}-table cap for one scorecard call. ` +
             `Narrow via schemaId or split into smaller tableIds batches.`
         );
       }
-      const tables = out.data as Array<Record<string, unknown>>;
+
+      // Copy rather than alias the response array — we mutate `tables` below
+      // and aliasing would let a subsequent page's response double-count
+      // anything that happens to share backing storage.
+      const tables: Array<Record<string, unknown>> = [
+        ...(firstPage.getTables.data as Array<Record<string, unknown>>),
+      ];
+      const expectedPages = Math.ceil(totalCount / TABLE_PAGE_SIZE);
+      for (let page = 1; page < expectedPages; page++) {
+        const resp = await c.execute<{ getTables: GetTablesOutput }>(
+          GET_TABLES_DETAIL_BATCH,
+          {
+            scope: scope.filter,
+            sorting: [{ sortingKey: "popularity", direction: "DESC" }],
+            pagination: { nbPerPage: TABLE_PAGE_SIZE, page },
+          }
+        );
+        const rows = resp.getTables.data as Array<Record<string, unknown>>;
+        tables.push(...rows);
+        if (rows.length < TABLE_PAGE_SIZE) break;
+      }
+      if (tables.length < Math.min(totalCount, TABLE_HARD_CAP)) {
+        throw new Error(
+          `Table pagination returned ${tables.length} rows for scope=${scope.field} ` +
+            `but totalCount reported ${totalCount}. Refusing to emit a partial scorecard.`
+        );
+      }
       if (tables.length === 0) {
         return {
           scopedBy: scope.field,

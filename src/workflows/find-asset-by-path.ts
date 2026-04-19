@@ -64,6 +64,39 @@ function matchByName<T extends NamedRow>(
   return rows.filter((r) => (r.name ?? "").toLowerCase() === lc);
 }
 
+// Step page size + bounded pagination ceiling. At 200 rows/page * 10 pages =
+// 2000 substring-matching names at the deepest step, which covers every
+// realistic catalog. Without this, short common substrings like "db" against
+// a 60-database account silently returned notFound from the first-50 window.
+const STEP_PAGE_SIZE = 200;
+const STEP_MAX_PAGES = 10;
+
+/**
+ * Paginate a step query exhaustively (up to STEP_MAX_PAGES) collecting every
+ * exact-name match. Each step already narrows with `nameContains`, so the
+ * pagination exists only to cover the case where many rows share a common
+ * substring. Throws rather than silently truncating if the ceiling is hit.
+ */
+async function findExactMatches<T extends NamedRow>(
+  fetchPage: (page: number, nbPerPage: number) => Promise<{ data: T[]; totalCount: number }>,
+  expected: string,
+  caseSensitive: boolean,
+  stepLabel: string
+): Promise<T[]> {
+  const matches: T[] = [];
+  for (let page = 0; page < STEP_MAX_PAGES; page++) {
+    const resp = await fetchPage(page, STEP_PAGE_SIZE);
+    matches.push(...matchByName(resp.data, expected, caseSensitive));
+    if (resp.data.length < STEP_PAGE_SIZE) return matches;
+    if ((page + 1) * STEP_PAGE_SIZE >= resp.totalCount) return matches;
+  }
+  throw new Error(
+    `${stepLabel} search for "${expected}" spans more than ${STEP_MAX_PAGES * STEP_PAGE_SIZE} ` +
+      `substring-matching rows. Pass a more specific ${stepLabel.toLowerCase()} name or ` +
+      `resolve this asset via UUID directly.`
+  );
+}
+
 const FindAssetByPathInputShape = {
   path: z
     .string()
@@ -110,14 +143,21 @@ export function defineFindAssetByPath(
       const [dbName, schemaName, tableName, columnName] = parts;
 
       // Step 1: database
-      const dbsResp = await c.execute<{ getDatabases: GetDatabasesOutput }>(
-        GET_DATABASES,
-        {
-          scope: { nameContains: dbName },
-          pagination: { nbPerPage: 50, page: 0 },
-        }
+      const dbMatches = await findExactMatches(
+        async (page, nbPerPage) => {
+          const resp = await c.execute<{ getDatabases: GetDatabasesOutput }>(
+            GET_DATABASES,
+            {
+              scope: { nameContains: dbName },
+              pagination: { nbPerPage, page },
+            }
+          );
+          return resp.getDatabases;
+        },
+        dbName,
+        caseSensitive,
+        "Database"
       );
-      const dbMatches = matchByName(dbsResp.getDatabases.data, dbName, caseSensitive);
       if (dbMatches.length === 0) {
         return { notFound: true, reason: `No database matched "${dbName}".` };
       }
@@ -131,17 +171,20 @@ export function defineFindAssetByPath(
       const database = dbMatches[0];
 
       // Step 2: schema
-      const schemasResp = await c.execute<{ getSchemas: GetSchemasOutput }>(
-        GET_SCHEMAS,
-        {
-          scope: { databaseIds: [database.id], nameContains: schemaName },
-          pagination: { nbPerPage: 50, page: 0 },
-        }
-      );
-      const schemaMatches = matchByName(
-        schemasResp.getSchemas.data,
+      const schemaMatches = await findExactMatches(
+        async (page, nbPerPage) => {
+          const resp = await c.execute<{ getSchemas: GetSchemasOutput }>(
+            GET_SCHEMAS,
+            {
+              scope: { databaseIds: [database.id], nameContains: schemaName },
+              pagination: { nbPerPage, page },
+            }
+          );
+          return resp.getSchemas;
+        },
         schemaName,
-        caseSensitive
+        caseSensitive,
+        "Schema"
       );
       if (schemaMatches.length === 0) {
         return {
@@ -161,17 +204,20 @@ export function defineFindAssetByPath(
       const schema = schemaMatches[0];
 
       // Step 3: table
-      const tablesResp = await c.execute<{ getTables: GetTablesOutput }>(
-        GET_TABLES_SUMMARY,
-        {
-          scope: { schemaId: schema.id, nameContains: tableName },
-          pagination: { nbPerPage: 50, page: 0 },
-        }
-      );
-      const tableMatches = matchByName(
-        tablesResp.getTables.data,
+      const tableMatches = await findExactMatches(
+        async (page, nbPerPage) => {
+          const resp = await c.execute<{ getTables: GetTablesOutput }>(
+            GET_TABLES_SUMMARY,
+            {
+              scope: { schemaId: schema.id, nameContains: tableName },
+              pagination: { nbPerPage, page },
+            }
+          );
+          return resp.getTables;
+        },
         tableName,
-        caseSensitive
+        caseSensitive,
+        "Table"
       );
       if (tableMatches.length === 0) {
         return {
@@ -205,18 +251,24 @@ export function defineFindAssetByPath(
         };
       }
 
-      // Step 4: column
-      const colsResp = await c.execute<{ getColumns: GetColumnsOutput }>(
-        GET_COLUMNS_SUMMARY,
-        {
-          scope: { tableId: table.id, name: columnName },
-          pagination: { nbPerPage: 50, page: 0 },
-        }
-      );
-      const colMatches = matchByName(
-        colsResp.getColumns.data,
+      // Step 4: column. Use nameContains (not name) so the server filter is
+      // substring-based and the client-side matchByName applies the
+      // caseSensitive option — otherwise a case-folded column like `order_id`
+      // would never match `ORDER_ID` regardless of caseSensitive.
+      const colMatches = await findExactMatches(
+        async (page, nbPerPage) => {
+          const resp = await c.execute<{ getColumns: GetColumnsOutput }>(
+            GET_COLUMNS_SUMMARY,
+            {
+              scope: { tableId: table.id, nameContains: columnName },
+              pagination: { nbPerPage, page },
+            }
+          );
+          return resp.getColumns;
+        },
         columnName,
-        caseSensitive
+        caseSensitive,
+        "Column"
       );
       if (colMatches.length === 0) {
         return {

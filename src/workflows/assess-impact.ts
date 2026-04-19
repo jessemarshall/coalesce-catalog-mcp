@@ -54,6 +54,9 @@ const WIDTH_CAPS: Record<number, number> = {
 };
 
 const ENRICHMENT_BATCH_SIZE = 500;
+// Bound per-depth fanout so a 2000-node frontier doesn't open 2000 concurrent
+// HTTP requests. Matches the scorecard's QUALITY_PARALLELISM convention.
+const LINEAGE_FANOUT_PARALLELISM = 20;
 
 interface ReachedNode {
   kind: AssetKind;
@@ -131,8 +134,10 @@ async function fetchAllDownstreamEdges(
     );
     const rows = resp.getLineages.data;
     for (const r of rows) all.push(r);
+    // Only the short-page signal is load-bearing. An off-by-one or post-filter
+    // totalCount from the server would silently drop trailing pages — the
+    // completeness contract is worth the extra (empty) request per hub.
     if (rows.length < LINEAGE_PAGE_SIZE) return all;
-    if ((page + 1) * LINEAGE_PAGE_SIZE >= resp.getLineages.totalCount) return all;
   }
   throw new Error(
     `Lineage pagination exceeded ${LINEAGE_PAGES_PER_NODE_MAX} pages for ` +
@@ -166,9 +171,16 @@ async function traverseDownstream(
       }
     }
 
-    const edgesPerNode = await Promise.all(
-      frontier.map((node) => fetchAllDownstreamEdges(client, node.id, node.kind))
-    );
+    const edgesPerNode: Array<
+      Array<{ childTableId?: string | null; childDashboardId?: string | null }>
+    > = [];
+    for (let i = 0; i < frontier.length; i += LINEAGE_FANOUT_PARALLELISM) {
+      const slice = frontier.slice(i, i + LINEAGE_FANOUT_PARALLELISM);
+      const sliceEdges = await Promise.all(
+        slice.map((node) => fetchAllDownstreamEdges(client, node.id, node.kind))
+      );
+      edgesPerNode.push(...sliceEdges);
+    }
 
     const nextFrontier: Array<{ id: string; kind: AssetKind }> = [];
     for (const edges of edgesPerNode) {
@@ -231,14 +243,20 @@ async function enrichByKind(
 
 function extractTeams(row: Record<string, unknown> | undefined): OwnerTeamRef[] {
   if (!row || !Array.isArray(row.teamOwnerEntities)) return [];
-  return (row.teamOwnerEntities as Array<Record<string, unknown>>).map((t) => {
-    const team = t.team as Record<string, unknown> | undefined;
-    return {
-      id: t.id as string,
-      teamId: (t.teamId as string | null) ?? null,
-      name: (team?.name as string | null) ?? null,
-    };
-  });
+  // Filter out rows whose teamId is null — the binding exists but doesn't
+  // point at a team (orphaned binding). Keeps ownerTeamCount aligned with the
+  // scorecard's hasOwner logic; otherwise unownedCount / distinctOwnerTeamCount
+  // disagree with the scorecard on the same assets.
+  return (row.teamOwnerEntities as Array<Record<string, unknown>>)
+    .filter((t) => t.teamId != null)
+    .map((t) => {
+      const team = t.team as Record<string, unknown> | undefined;
+      return {
+        id: t.id as string,
+        teamId: t.teamId as string,
+        name: (team?.name as string | null) ?? null,
+      };
+    });
 }
 
 function userOwnerCount(row: Record<string, unknown> | undefined): number {
