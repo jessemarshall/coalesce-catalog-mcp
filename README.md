@@ -306,6 +306,7 @@ Content lives in [`src/resources/context/`](src/resources/context) — edit the 
 
 **Composite workflow**
 
+- **`catalog_get_column_lineage`** - Complete column-level lineage graph for a starting column. Accepts an FQN (`DATABASE.SCHEMA.TABLE.COLUMN`) or UUID, resolves it, walks the BFS **exhaustively with no depth cap**, and batch-resolves every reached column id to `{ name, fqn, tableName, schemaName, databaseName }`. Returns nodes + edges as a DAG (handles cycles + shared children). Configurable `maxNodes` safety ceiling (default 10000) guards against pathological graphs.
 - **`catalog_trace_missing_lineage`** - Heuristic diagnostic: probes a table's upstream/downstream counts, lineage provenance, and column-level coverage %; returns `findings[]` with severity + remediation suggestions.
 
 **Write**
@@ -389,6 +390,15 @@ Content lives in [`src/resources/context/`](src/resources/context) — edit the 
 
 <details>
 
+<summary><picture><source media="(prefers-color-scheme: dark)" srcset="docs/icons/tools-dark.png"><source media="(prefers-color-scheme: light)" srcset="docs/icons/tools-light.png"><img src="docs/icons/tools-light.png" width="28" height="28" alt="tools"></picture> <b>Introspection / escape hatch</b> &mdash; GraphQL schema describe + raw query passthrough</summary>
+
+- **`catalog_describe_type`** - Introspect a GraphQL type on the Catalog Public API. Returns kind, description, fields (OBJECT / INTERFACE), inputFields (INPUT_OBJECT), or enumValues (ENUM). Each field is rendered as native GraphQL SDL (`[String!]!`) with an `isRequired` flag. On miss, returns near-match suggestions via Levenshtein + substring matching. Use for API-shape questions ("does getLineages accept a column scope?", "what's in GetFieldLineagesScope?").
+- **`catalog_run_graphql`** - Execute an arbitrary GraphQL query or mutation against the Catalog Public API. Returns the raw response envelope (`data`, `errors`, `extensions`) unchanged — validation errors come through verbatim so you can debug them. Mutations are blocked by default; pass `allowMutations: true` to opt in. **Escape hatch, not the default path** — reach for the structured tools (`catalog_summarize_asset`, `catalog_get_column_lineage`, etc.) whenever they fit.
+
+</details>
+
+<details>
+
 <summary><picture><source media="(prefers-color-scheme: dark)" srcset="docs/icons/tools-dark.png"><source media="(prefers-color-scheme: light)" srcset="docs/icons/tools-light.png"><img src="docs/icons/tools-light.png" width="28" height="28" alt="tools"></picture> <b>Composite workflows</b> &mdash; one-call multi-tool orchestrations</summary>
 
 - **`catalog_find_asset_by_path`** - Resolve a dotted warehouse path to a UUID. (See [Discovery](#discovery) above.)
@@ -432,7 +442,7 @@ npm install -g coalesce-catalog-mcp@preview
 
 **2. Register with your MCP client** via one of the [Quick Start](#quick-start) paths.
 
-**3. Restart the client** and try the `/catalog-start-here` prompt (or whatever the slash-command UX is in your client). The agent should list the 4 context resources and 49 tools. If you get an auth error, double-check `COALESCE_CATALOG_API_KEY` has the right scope — READ tokens work on every query tool but mutations require READ_WRITE.
+**3. Restart the client** and try the `/catalog-start-here` prompt (or whatever the slash-command UX is in your client). The agent should list the 4 context resources and 57 tools. If you get an auth error, double-check `COALESCE_CATALOG_API_KEY` has the right scope — READ tokens work on every query tool but mutations require READ_WRITE.
 
 ### Credentials
 
@@ -442,7 +452,7 @@ npm install -g coalesce-catalog-mcp@preview
 | `COALESCE_CATALOG_API_KEY` | Public-API token from the Catalog UI (Settings → API tokens). **Required.** READ tokens work on every query tool; mutations require a READ_WRITE token. | — |
 | `COALESCE_CATALOG_REGION` | Catalog region: `eu` or `us`. Selects the default base URL. | `eu` |
 | `COALESCE_CATALOG_API_URL` | Full base URL override. The path `/public/graphql` is appended automatically. | region-derived |
-| `COALESCE_CATALOG_READ_ONLY` | When `true`, every mutation tool is filtered out at server registration time (49 tools → 26). | `false` |
+| `COALESCE_CATALOG_READ_ONLY` | When `true`, every mutation tool is filtered out at server registration time (57 tools → 34). | `false` |
 <!-- ENV_METADATA_CORE_TABLE_END -->
 
 **Region base URLs:**
@@ -457,7 +467,7 @@ npm install -g coalesce-catalog-mcp@preview
 Two layers keep destructive operations from happening by accident.
 
 - **Tool annotations.** Every tool carries MCP `readOnlyHint` / `destructiveHint` / `idempotentHint`. The ✍️ and ⚠️ markers in [Tools](#tools) track `readOnlyHint: false` and `destructiveHint: true` respectively.
-- **`COALESCE_CATALOG_READ_ONLY=true`** hides all 23 mutation tools at server registration time. Use it for audits, agent sandboxes, or pairing with a prod token. When set, the server registers 26 tools instead of 49.
+- **`COALESCE_CATALOG_READ_ONLY=true`** hides all 23 mutation tools at server registration time. Use it for audits, agent sandboxes, or pairing with a prod token. When set, the server registers 34 tools instead of 57.
 
 Mutation tools additionally require a READ_WRITE API token on the server side — a READ token returns `AuthorizationError` at call time regardless of client config.
 

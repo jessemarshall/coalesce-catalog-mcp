@@ -8,11 +8,13 @@ import { defineDiscoveryTools } from "../src/mcp/discovery.js";
 import { defineAnnotationTools } from "../src/mcp/annotations.js";
 import { defineGovernanceTools } from "../src/mcp/governance.js";
 import { defineAiTools } from "../src/mcp/ai.js";
+import { defineIntrospectionTools } from "../src/mcp/introspection.js";
 import { defineFindAssetByPath } from "../src/workflows/find-asset-by-path.js";
 import { defineSummarizeAsset } from "../src/workflows/summarize-asset.js";
 import { defineTraceMissingLineage } from "../src/workflows/trace-missing-lineage.js";
 import { defineAssessImpact } from "../src/workflows/assess-impact.js";
 import { defineGovernanceScorecard } from "../src/workflows/governance-scorecard.js";
+import { defineColumnLineage } from "../src/workflows/column-lineage.js";
 
 const client = createClient({
   apiKey: "dummy",
@@ -30,17 +32,19 @@ function allDefinitions() {
     ...defineAnnotationTools(client),
     ...defineGovernanceTools(client),
     ...defineAiTools(client),
+    ...defineIntrospectionTools(client),
     defineFindAssetByPath(client),
     defineSummarizeAsset(client),
     defineTraceMissingLineage(client),
     defineAssessImpact(client),
     defineGovernanceScorecard(client),
+    defineColumnLineage(client),
   ];
 }
 
 describe("tool registration", () => {
-  it("registers 54 tools across all domains", () => {
-    expect(allDefinitions()).toHaveLength(54);
+  it("registers 57 tools across all domains", () => {
+    expect(allDefinitions()).toHaveLength(57);
   });
 
   it("every tool name starts with 'catalog_'", () => {
@@ -77,14 +81,14 @@ describe("tool registration", () => {
     }
   });
 
-  it("splits roughly 31 read / 23 write", () => {
+  it("splits roughly 34 read / 23 write", () => {
     const reads = allDefinitions().filter(
       (d) => d.config.annotations?.readOnlyHint === true
     );
     const writes = allDefinitions().filter(
       (d) => d.config.annotations?.readOnlyHint !== true
     );
-    expect(reads).toHaveLength(31);
+    expect(reads).toHaveLength(34);
     expect(writes).toHaveLength(23);
   });
 

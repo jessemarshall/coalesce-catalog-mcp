@@ -112,6 +112,223 @@ const FindAssetByPathInputShape = {
     ),
 };
 
+export interface ResolvedAssetSuccess {
+  resolved: {
+    kind: "TABLE" | "COLUMN";
+    id: string;
+    fullPath: string;
+    database: { id: string; name: string };
+    schema: { id: string; name: string };
+    table: { id: string; name: string };
+    column?: { id: string; name: string };
+  };
+}
+
+export interface ResolvedAssetNotFound {
+  notFound: true;
+  reason: string;
+  parsedParts?: string[];
+  database?: { id: string; name: string };
+  schema?: { id: string; name: string };
+  table?: { id: string; name: string };
+}
+
+export interface ResolvedAssetAmbiguous {
+  ambiguous: true;
+  at: "database" | "schema" | "table" | "column";
+  database?: { id: string; name: string };
+  schema?: { id: string; name: string };
+  table?: { id: string; name: string };
+  candidates: Array<{ id: string; name: string }>;
+}
+
+export type ResolveResult =
+  | ResolvedAssetSuccess
+  | ResolvedAssetNotFound
+  | ResolvedAssetAmbiguous;
+
+/**
+ * Walk the database → schema → table → [column] hierarchy to resolve a dotted
+ * warehouse path to a Catalog UUID. Extracted so composite workflows (column
+ * lineage, etc.) can reuse the FQN-resolution step without re-implementing
+ * the 4-query walk or the ambiguity/not-found branches.
+ */
+export async function resolveAssetByPath(
+  client: CatalogClient,
+  path: string,
+  caseSensitive = false
+): Promise<ResolveResult> {
+  const parts = parsePath(path);
+  if (parts.length < 3 || parts.length > 4) {
+    return {
+      notFound: true,
+      reason:
+        `Expected 3 or 4 path components (got ${parts.length}). ` +
+        `Format: DATABASE.SCHEMA.TABLE or DATABASE.SCHEMA.TABLE.COLUMN.`,
+      parsedParts: parts,
+    };
+  }
+  const [dbName, schemaName, tableName, columnName] = parts;
+
+  const dbMatches = await findExactMatches(
+    async (page, nbPerPage) => {
+      const resp = await client.execute<{ getDatabases: GetDatabasesOutput }>(
+        GET_DATABASES,
+        {
+          scope: { nameContains: dbName },
+          pagination: { nbPerPage, page },
+        }
+      );
+      return resp.getDatabases;
+    },
+    dbName,
+    caseSensitive,
+    "Database"
+  );
+  if (dbMatches.length === 0) {
+    return { notFound: true, reason: `No database matched "${dbName}".` };
+  }
+  if (dbMatches.length > 1) {
+    return {
+      ambiguous: true,
+      at: "database",
+      candidates: dbMatches.map((d) => ({ id: d.id, name: d.name })),
+    };
+  }
+  const database = dbMatches[0];
+
+  const schemaMatches = await findExactMatches(
+    async (page, nbPerPage) => {
+      const resp = await client.execute<{ getSchemas: GetSchemasOutput }>(
+        GET_SCHEMAS,
+        {
+          scope: { databaseIds: [database.id], nameContains: schemaName },
+          pagination: { nbPerPage, page },
+        }
+      );
+      return resp.getSchemas;
+    },
+    schemaName,
+    caseSensitive,
+    "Schema"
+  );
+  if (schemaMatches.length === 0) {
+    return {
+      notFound: true,
+      reason: `No schema named "${schemaName}" in database "${database.name}".`,
+      database: { id: database.id, name: database.name },
+    };
+  }
+  if (schemaMatches.length > 1) {
+    return {
+      ambiguous: true,
+      at: "schema",
+      database: { id: database.id, name: database.name },
+      candidates: schemaMatches.map((s) => ({ id: s.id, name: s.name })),
+    };
+  }
+  const schema = schemaMatches[0];
+
+  const tableMatches = await findExactMatches(
+    async (page, nbPerPage) => {
+      const resp = await client.execute<{ getTables: GetTablesOutput }>(
+        GET_TABLES_SUMMARY,
+        {
+          scope: { schemaId: schema.id, nameContains: tableName },
+          pagination: { nbPerPage, page },
+        }
+      );
+      return resp.getTables;
+    },
+    tableName,
+    caseSensitive,
+    "Table"
+  );
+  if (tableMatches.length === 0) {
+    return {
+      notFound: true,
+      reason: `No table named "${tableName}" in schema "${database.name}.${schema.name}".`,
+      database: { id: database.id, name: database.name },
+      schema: { id: schema.id, name: schema.name },
+    };
+  }
+  if (tableMatches.length > 1) {
+    return {
+      ambiguous: true,
+      at: "table",
+      database: { id: database.id, name: database.name },
+      schema: { id: schema.id, name: schema.name },
+      candidates: tableMatches.map((t) => ({ id: t.id, name: t.name })),
+    };
+  }
+  const table = tableMatches[0];
+
+  if (!columnName) {
+    return {
+      resolved: {
+        kind: "TABLE",
+        id: table.id,
+        fullPath: `${database.name}.${schema.name}.${table.name}`,
+        database: { id: database.id, name: database.name },
+        schema: { id: schema.id, name: schema.name },
+        table: { id: table.id, name: table.name },
+      },
+    };
+  }
+
+  // Use nameContains (not name) so the server filter is substring-based and
+  // the client-side matchByName applies the caseSensitive option — otherwise
+  // a case-folded column like `order_id` would never match `ORDER_ID`
+  // regardless of caseSensitive.
+  const colMatches = await findExactMatches(
+    async (page, nbPerPage) => {
+      const resp = await client.execute<{ getColumns: GetColumnsOutput }>(
+        GET_COLUMNS_SUMMARY,
+        {
+          scope: { tableId: table.id, nameContains: columnName },
+          pagination: { nbPerPage, page },
+        }
+      );
+      return resp.getColumns;
+    },
+    columnName,
+    caseSensitive,
+    "Column"
+  );
+  if (colMatches.length === 0) {
+    return {
+      notFound: true,
+      reason: `No column named "${columnName}" on table "${database.name}.${schema.name}.${table.name}".`,
+      database: { id: database.id, name: database.name },
+      schema: { id: schema.id, name: schema.name },
+      table: { id: table.id, name: table.name },
+    };
+  }
+  if (colMatches.length > 1) {
+    return {
+      ambiguous: true,
+      at: "column",
+      database: { id: database.id, name: database.name },
+      schema: { id: schema.id, name: schema.name },
+      table: { id: table.id, name: table.name },
+      candidates: colMatches.map((col) => ({ id: col.id, name: col.name })),
+    };
+  }
+  const column = colMatches[0];
+
+  return {
+    resolved: {
+      kind: "COLUMN",
+      id: column.id,
+      fullPath: `${database.name}.${schema.name}.${table.name}.${column.name}`,
+      database: { id: database.id, name: database.name },
+      schema: { id: schema.id, name: schema.name },
+      table: { id: table.id, name: table.name },
+      column: { id: column.id, name: column.name },
+    },
+  };
+}
+
 export function defineFindAssetByPath(
   client: CatalogClient
 ): CatalogToolDefinition {
@@ -129,179 +346,7 @@ export function defineFindAssetByPath(
     handler: withErrorHandling(async (args, c) => {
       const path = args.path as string;
       const caseSensitive = (args.caseSensitive as boolean | undefined) ?? false;
-
-      const parts = parsePath(path);
-      if (parts.length < 3 || parts.length > 4) {
-        return {
-          notFound: true,
-          reason:
-            `Expected 3 or 4 path components (got ${parts.length}). ` +
-            `Format: DATABASE.SCHEMA.TABLE or DATABASE.SCHEMA.TABLE.COLUMN.`,
-          parsedParts: parts,
-        };
-      }
-      const [dbName, schemaName, tableName, columnName] = parts;
-
-      // Step 1: database
-      const dbMatches = await findExactMatches(
-        async (page, nbPerPage) => {
-          const resp = await c.execute<{ getDatabases: GetDatabasesOutput }>(
-            GET_DATABASES,
-            {
-              scope: { nameContains: dbName },
-              pagination: { nbPerPage, page },
-            }
-          );
-          return resp.getDatabases;
-        },
-        dbName,
-        caseSensitive,
-        "Database"
-      );
-      if (dbMatches.length === 0) {
-        return { notFound: true, reason: `No database matched "${dbName}".` };
-      }
-      if (dbMatches.length > 1) {
-        return {
-          ambiguous: true,
-          at: "database",
-          candidates: dbMatches.map((d) => ({ id: d.id, name: d.name })),
-        };
-      }
-      const database = dbMatches[0];
-
-      // Step 2: schema
-      const schemaMatches = await findExactMatches(
-        async (page, nbPerPage) => {
-          const resp = await c.execute<{ getSchemas: GetSchemasOutput }>(
-            GET_SCHEMAS,
-            {
-              scope: { databaseIds: [database.id], nameContains: schemaName },
-              pagination: { nbPerPage, page },
-            }
-          );
-          return resp.getSchemas;
-        },
-        schemaName,
-        caseSensitive,
-        "Schema"
-      );
-      if (schemaMatches.length === 0) {
-        return {
-          notFound: true,
-          reason: `No schema named "${schemaName}" in database "${database.name}".`,
-          database: { id: database.id, name: database.name },
-        };
-      }
-      if (schemaMatches.length > 1) {
-        return {
-          ambiguous: true,
-          at: "schema",
-          database: { id: database.id, name: database.name },
-          candidates: schemaMatches.map((s) => ({ id: s.id, name: s.name })),
-        };
-      }
-      const schema = schemaMatches[0];
-
-      // Step 3: table
-      const tableMatches = await findExactMatches(
-        async (page, nbPerPage) => {
-          const resp = await c.execute<{ getTables: GetTablesOutput }>(
-            GET_TABLES_SUMMARY,
-            {
-              scope: { schemaId: schema.id, nameContains: tableName },
-              pagination: { nbPerPage, page },
-            }
-          );
-          return resp.getTables;
-        },
-        tableName,
-        caseSensitive,
-        "Table"
-      );
-      if (tableMatches.length === 0) {
-        return {
-          notFound: true,
-          reason: `No table named "${tableName}" in schema "${database.name}.${schema.name}".`,
-          database: { id: database.id, name: database.name },
-          schema: { id: schema.id, name: schema.name },
-        };
-      }
-      if (tableMatches.length > 1) {
-        return {
-          ambiguous: true,
-          at: "table",
-          database: { id: database.id, name: database.name },
-          schema: { id: schema.id, name: schema.name },
-          candidates: tableMatches.map((t) => ({ id: t.id, name: t.name })),
-        };
-      }
-      const table = tableMatches[0];
-
-      if (!columnName) {
-        return {
-          resolved: {
-            kind: "TABLE",
-            id: table.id,
-            fullPath: `${database.name}.${schema.name}.${table.name}`,
-            database: { id: database.id, name: database.name },
-            schema: { id: schema.id, name: schema.name },
-            table: { id: table.id, name: table.name },
-          },
-        };
-      }
-
-      // Step 4: column. Use nameContains (not name) so the server filter is
-      // substring-based and the client-side matchByName applies the
-      // caseSensitive option — otherwise a case-folded column like `order_id`
-      // would never match `ORDER_ID` regardless of caseSensitive.
-      const colMatches = await findExactMatches(
-        async (page, nbPerPage) => {
-          const resp = await c.execute<{ getColumns: GetColumnsOutput }>(
-            GET_COLUMNS_SUMMARY,
-            {
-              scope: { tableId: table.id, nameContains: columnName },
-              pagination: { nbPerPage, page },
-            }
-          );
-          return resp.getColumns;
-        },
-        columnName,
-        caseSensitive,
-        "Column"
-      );
-      if (colMatches.length === 0) {
-        return {
-          notFound: true,
-          reason: `No column named "${columnName}" on table "${database.name}.${schema.name}.${table.name}".`,
-          database: { id: database.id, name: database.name },
-          schema: { id: schema.id, name: schema.name },
-          table: { id: table.id, name: table.name },
-        };
-      }
-      if (colMatches.length > 1) {
-        return {
-          ambiguous: true,
-          at: "column",
-          database: { id: database.id, name: database.name },
-          schema: { id: schema.id, name: schema.name },
-          table: { id: table.id, name: table.name },
-          candidates: colMatches.map((col) => ({ id: col.id, name: col.name })),
-        };
-      }
-      const column = colMatches[0];
-
-      return {
-        resolved: {
-          kind: "COLUMN",
-          id: column.id,
-          fullPath: `${database.name}.${schema.name}.${table.name}.${column.name}`,
-          database: { id: database.id, name: database.name },
-          schema: { id: schema.id, name: schema.name },
-          table: { id: table.id, name: table.name },
-          column: { id: column.id, name: column.name },
-        },
-      };
+      return resolveAssetByPath(c, path, caseSensitive);
     }, client),
   };
 }

@@ -798,6 +798,40 @@ export const GET_COLUMN_DETAIL = /* GraphQL */ `
   }
 `;
 
+// Used by catalog_get_column_lineage to resolve a table id to its full
+// DB.SCHEMA.TABLE FQN in one call. `getTables` is the only Get* query that
+// accepts a nested `schema { database { ... } }` relation chain — the
+// equivalent path on getColumns is rejected with "You cannot request the
+// following relations: table, table.schema, table.schema.database", and
+// GetSchemasScope / GetDatabasesScope have no `ids` filter so we can't
+// batch-look-up by UUID via those queries.
+export const GET_TABLES_WITH_SCHEMA_CHAIN = /* GraphQL */ `
+  query CatalogGetTablesWithSchemaChain(
+    $scope: GetTablesScope
+    $pagination: Pagination
+  ) {
+    getTables(scope: $scope, pagination: $pagination) {
+      totalCount
+      nbPerPage
+      page
+      data {
+        id
+        name
+        schemaId
+        schema {
+          id
+          name
+          databaseId
+          database {
+            id
+            name
+          }
+        }
+      }
+    }
+  }
+`;
+
 export const GET_COLUMN_JOINS = /* GraphQL */ `
   query CatalogGetColumnJoins(
     $scope: GetColumnJoinsScope
