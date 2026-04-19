@@ -214,7 +214,7 @@ export function defineAnnotationTools(
           ),
           pagination: pagination as Pagination,
         };
-        const data = await c.query<{ getTags: GetTagsOutput }>(
+        const data = await c.execute<{ getTags: GetTagsOutput }>(
           GET_TAGS,
           variables
         );
@@ -244,7 +244,7 @@ export function defineAnnotationTools(
           ),
           pagination: pagination as Pagination,
         };
-        const data = await c.query<{ getTerms: GetTermsOutput }>(
+        const data = await c.execute<{ getTerms: GetTermsOutput }>(
           GET_TERMS,
           variables
         );
@@ -274,7 +274,7 @@ export function defineAnnotationTools(
           ),
           pagination: pagination as Pagination,
         };
-        const data = await c.query<{ getDataProducts: GetDataProductOutput }>(
+        const data = await c.execute<{ getDataProducts: GetDataProductOutput }>(
           GET_DATA_PRODUCTS,
           variables
         );
@@ -318,7 +318,7 @@ export function defineAnnotationTools(
           entityId: string;
           label: string;
         }>;
-        const data = await c.query<{ attachTags: boolean }>(ATTACH_TAGS, {
+        const data = await c.execute<{ attachTags: boolean }>(ATTACH_TAGS, {
           data: input satisfies BaseTagEntityInput[],
         });
         return { success: data.attachTags, attached: input.length };
@@ -355,7 +355,7 @@ export function defineAnnotationTools(
           entityId: string;
           label: string;
         }>;
-        const data = await c.query<{ detachTags: boolean }>(DETACH_TAGS, {
+        const data = await c.execute<{ detachTags: boolean }>(DETACH_TAGS, {
           data: input satisfies BaseTagEntityInput[],
         });
         return { success: data.detachTags, detached: input.length };
@@ -399,7 +399,7 @@ export function defineAnnotationTools(
             ? { linkedTagId: args.linkedTagId }
             : {}),
         };
-        const data = await c.query<{ createTerm: Term }>(CREATE_TERM, {
+        const data = await c.execute<{ createTerm: Term }>(CREATE_TERM, {
           data: input,
         });
         return { term: data.createTerm };
@@ -440,7 +440,7 @@ export function defineAnnotationTools(
         if (args.linkedTagId !== undefined) {
           input.linkedTagId = args.linkedTagId as string | null;
         }
-        const data = await c.query<{ updateTerm: Term }>(UPDATE_TERM, {
+        const data = await c.execute<{ updateTerm: Term }>(UPDATE_TERM, {
           data: input,
         });
         return { term: data.updateTerm };
@@ -461,7 +461,7 @@ export function defineAnnotationTools(
       },
       handler: withErrorHandling(async (args, c) => {
         const input: DeleteTermInput = { id: args.id as string };
-        const data = await c.query<{ deleteTerm: boolean }>(DELETE_TERM, {
+        const data = await c.execute<{ deleteTerm: boolean }>(DELETE_TERM, {
           data: input,
         });
         return { success: data.deleteTerm, id: input.id };

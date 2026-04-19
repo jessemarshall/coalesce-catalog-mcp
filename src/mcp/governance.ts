@@ -111,7 +111,7 @@ async function findUserById(
   userId: string
 ): Promise<GetUsersOutput | null> {
   for (let page = 0; page < LOOKUP_MAX_PAGES; page++) {
-    const data = await client.query<{ getUsers: GetUsersOutput[] }>(
+    const data = await client.execute<{ getUsers: GetUsersOutput[] }>(
       GET_USERS,
       { pagination: { nbPerPage: LOOKUP_PAGE_SIZE, page } }
     );
@@ -127,7 +127,7 @@ async function findTeamById(
   teamId: string
 ): Promise<GetTeamsOutput | null> {
   for (let page = 0; page < LOOKUP_MAX_PAGES; page++) {
-    const data = await client.query<{ getTeams: GetTeamsOutput[] }>(
+    const data = await client.execute<{ getTeams: GetTeamsOutput[] }>(
       GET_TEAMS,
       { pagination: { nbPerPage: LOOKUP_PAGE_SIZE, page } }
     );
@@ -299,7 +299,7 @@ export function defineGovernanceTools(
       },
       handler: withErrorHandling(async (args, c) => {
         const pagination = toGraphQLPagination(args as PaginationInput);
-        const data = await c.query<{ getUsers: GetUsersOutput[] }>(
+        const data = await c.execute<{ getUsers: GetUsersOutput[] }>(
           GET_USERS,
           { pagination: pagination as Pagination }
         );
@@ -324,7 +324,7 @@ export function defineGovernanceTools(
       },
       handler: withErrorHandling(async (args, c) => {
         const pagination = toGraphQLPagination(args as PaginationInput);
-        const data = await c.query<{ getTeams: GetTeamsOutput[] }>(
+        const data = await c.execute<{ getTeams: GetTeamsOutput[] }>(
           GET_TEAMS,
           { pagination: pagination as Pagination }
         );
@@ -448,7 +448,7 @@ export function defineGovernanceTools(
           scope: buildQualityChecksScope(args),
           pagination: pagination as Pagination,
         };
-        const data = await c.query<{ getDataQualities: GetQualityChecksOutput }>(
+        const data = await c.execute<{ getDataQualities: GetQualityChecksOutput }>(
           GET_DATA_QUALITIES,
           variables
         );
@@ -478,7 +478,7 @@ export function defineGovernanceTools(
           ),
           pagination: pagination as Pagination,
         };
-        const data = await c.query<{ getPinnedAssets: GetEntitiesLinkOutput }>(
+        const data = await c.execute<{ getPinnedAssets: GetEntitiesLinkOutput }>(
           GET_PINNED_ASSETS,
           variables
         );
@@ -518,7 +518,7 @@ export function defineGovernanceTools(
           technology: ExternalLinkTechnology;
           url: string;
         }>;
-        const data = await c.query<{ createExternalLinks: ExternalLink[] }>(
+        const data = await c.execute<{ createExternalLinks: ExternalLink[] }>(
           CREATE_EXTERNAL_LINKS,
           { data: input satisfies CreateExternalLinkInput[] }
         );
@@ -547,7 +547,7 @@ export function defineGovernanceTools(
       },
       handler: withErrorHandling(async (args, c) => {
         const input = args.data as UpdateExternalLinkInput[];
-        const data = await c.query<{ updateExternalLinks: ExternalLink[] }>(
+        const data = await c.execute<{ updateExternalLinks: ExternalLink[] }>(
           UPDATE_EXTERNAL_LINKS,
           { data: input }
         );
@@ -575,7 +575,7 @@ export function defineGovernanceTools(
       },
       handler: withErrorHandling(async (args, c) => {
         const input = args.data as DeleteExternalLinkInput[];
-        const data = await c.query<{ deleteExternalLinks: boolean }>(
+        const data = await c.execute<{ deleteExternalLinks: boolean }>(
           DELETE_EXTERNAL_LINKS,
           { data: input }
         );
@@ -635,7 +635,7 @@ export function defineGovernanceTools(
             columnId?: string;
           }>,
         };
-        const data = await c.query<{ upsertDataQualities: QualityCheck[] }>(
+        const data = await c.execute<{ upsertDataQualities: QualityCheck[] }>(
           UPSERT_DATA_QUALITIES,
           { data: input }
         );
@@ -673,7 +673,7 @@ export function defineGovernanceTools(
             externalId: string;
           }>,
         };
-        const data = await c.query<{ removeDataQualities: boolean }>(
+        const data = await c.execute<{ removeDataQualities: boolean }>(
           REMOVE_DATA_QUALITIES,
           { data: input }
         );
@@ -712,7 +712,7 @@ export function defineGovernanceTools(
           userId: args.userId as string,
           targetEntities: args.targetEntities as EntityTarget[],
         };
-        const data = await c.query<{ upsertUserOwners: OwnerEntity[] }>(
+        const data = await c.execute<{ upsertUserOwners: OwnerEntity[] }>(
           UPSERT_USER_OWNERS,
           { data: input }
         );
@@ -749,7 +749,7 @@ export function defineGovernanceTools(
             ? { targetEntities: args.targetEntities as EntityTarget[] }
             : {}),
         };
-        const data = await c.query<{ removeUserOwners: boolean }>(
+        const data = await c.execute<{ removeUserOwners: boolean }>(
           REMOVE_USER_OWNERS,
           { data: input }
         );
@@ -782,7 +782,7 @@ export function defineGovernanceTools(
           teamId: args.teamId as string,
           targetEntities: args.targetEntities as EntityTarget[],
         };
-        const data = await c.query<{ upsertTeamOwners: TeamOwnerEntity[] }>(
+        const data = await c.execute<{ upsertTeamOwners: TeamOwnerEntity[] }>(
           UPSERT_TEAM_OWNERS,
           { data: input }
         );
@@ -819,7 +819,7 @@ export function defineGovernanceTools(
             ? { targetEntities: args.targetEntities as EntityTarget[] }
             : {}),
         };
-        const data = await c.query<{ removeTeamOwners: boolean }>(
+        const data = await c.execute<{ removeTeamOwners: boolean }>(
           REMOVE_TEAM_OWNERS,
           { data: input }
         );
@@ -859,7 +859,7 @@ export function defineGovernanceTools(
         if (typeof args.email === "string") input.email = args.email;
         if (typeof args.slackChannel === "string") input.slackChannel = args.slackChannel;
         if (typeof args.slackGroup === "string") input.slackGroup = args.slackGroup;
-        const data = await c.query<{ upsertTeam: Team }>(UPSERT_TEAM, {
+        const data = await c.execute<{ upsertTeam: Team }>(UPSERT_TEAM, {
           data: input,
         });
         return { team: data.upsertTeam };
@@ -886,7 +886,7 @@ export function defineGovernanceTools(
           id: args.id as string,
           emails: args.emails as string[],
         };
-        const data = await c.query<{ addTeamUsers: boolean }>(ADD_TEAM_USERS, {
+        const data = await c.execute<{ addTeamUsers: boolean }>(ADD_TEAM_USERS, {
           data: input,
         });
         return { success: data.addTeamUsers, added: input.emails.length };
@@ -913,7 +913,7 @@ export function defineGovernanceTools(
           id: args.id as string,
           emails: args.emails as string[],
         };
-        const data = await c.query<{ removeTeamUsers: boolean }>(
+        const data = await c.execute<{ removeTeamUsers: boolean }>(
           REMOVE_TEAM_USERS,
           { data: input }
         );
@@ -964,7 +964,7 @@ export function defineGovernanceTools(
       },
       handler: withErrorHandling(async (args, c) => {
         const input = args.data as EntitiesLinkInput[];
-        const data = await c.query<{ upsertPinnedAssets: EntitiesLink[] }>(
+        const data = await c.execute<{ upsertPinnedAssets: EntitiesLink[] }>(
           UPSERT_PINNED_ASSETS,
           { data: input }
         );
@@ -1012,7 +1012,7 @@ export function defineGovernanceTools(
       },
       handler: withErrorHandling(async (args, c) => {
         const input = args.data as EntitiesLinkInput[];
-        const data = await c.query<{ removePinnedAssets: boolean }>(
+        const data = await c.execute<{ removePinnedAssets: boolean }>(
           REMOVE_PINNED_ASSETS,
           { data: input }
         );

@@ -21,7 +21,7 @@ export function makeMockClient(responder: Responder): MockClient {
     endpoint: "https://example.invalid/public/graphql",
     region: "eu",
     calls,
-    async query<TData>(document: string, variables?: unknown): Promise<TData> {
+    async execute<TData>(document: string, variables?: unknown): Promise<TData> {
       const callIndex = calls.length;
       calls.push({ document, variables });
       const result = await responder(document, variables, callIndex);

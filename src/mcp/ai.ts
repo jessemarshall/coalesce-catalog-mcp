@@ -136,7 +136,7 @@ export function defineAiTools(client: CatalogClient): CatalogToolDefinition[] {
           },
           scope: buildSearchQueriesScope(args),
         };
-        const data = await c.query<{ searchQueries: SearchQueriesOutput }>(
+        const data = await c.execute<{ searchQueries: SearchQueriesOutput }>(
           SEARCH_QUERIES,
           variables
         );
@@ -161,7 +161,7 @@ export function defineAiTools(client: CatalogClient): CatalogToolDefinition[] {
           question: args.question as string,
           ...(typeof args.origin === "string" ? { origin: args.origin as Origin } : {}),
         };
-        const data = await c.query<{ addAiAssistantJob: AddAiAssistantJobOutput }>(
+        const data = await c.execute<{ addAiAssistantJob: AddAiAssistantJobOutput }>(
           ADD_AI_ASSISTANT_JOB,
           { data: input }
         );
@@ -182,7 +182,7 @@ export function defineAiTools(client: CatalogClient): CatalogToolDefinition[] {
       handler: withErrorHandling(async (args, c) => {
         const input: Record<string, unknown> = { id: args.jobId as string };
         if (typeof args.delaySeconds === "number") input.delaySeconds = args.delaySeconds;
-        const data = await c.query<{
+        const data = await c.execute<{
           getAiAssistantJobResult: GetAiAssistantJobResultOutput;
         }>(GET_AI_ASSISTANT_JOB_RESULT, { data: input });
         return data.getAiAssistantJobResult.data;

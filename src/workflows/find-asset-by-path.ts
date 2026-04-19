@@ -110,7 +110,7 @@ export function defineFindAssetByPath(
       const [dbName, schemaName, tableName, columnName] = parts;
 
       // Step 1: database
-      const dbsResp = await c.query<{ getDatabases: GetDatabasesOutput }>(
+      const dbsResp = await c.execute<{ getDatabases: GetDatabasesOutput }>(
         GET_DATABASES,
         {
           scope: { nameContains: dbName },
@@ -131,7 +131,7 @@ export function defineFindAssetByPath(
       const database = dbMatches[0];
 
       // Step 2: schema
-      const schemasResp = await c.query<{ getSchemas: GetSchemasOutput }>(
+      const schemasResp = await c.execute<{ getSchemas: GetSchemasOutput }>(
         GET_SCHEMAS,
         {
           scope: { databaseIds: [database.id], nameContains: schemaName },
@@ -161,7 +161,7 @@ export function defineFindAssetByPath(
       const schema = schemaMatches[0];
 
       // Step 3: table
-      const tablesResp = await c.query<{ getTables: GetTablesOutput }>(
+      const tablesResp = await c.execute<{ getTables: GetTablesOutput }>(
         GET_TABLES_SUMMARY,
         {
           scope: { schemaId: schema.id, nameContains: tableName },
@@ -206,7 +206,7 @@ export function defineFindAssetByPath(
       }
 
       // Step 4: column
-      const colsResp = await c.query<{ getColumns: GetColumnsOutput }>(
+      const colsResp = await c.execute<{ getColumns: GetColumnsOutput }>(
         GET_COLUMNS_SUMMARY,
         {
           scope: { tableId: table.id, name: columnName },

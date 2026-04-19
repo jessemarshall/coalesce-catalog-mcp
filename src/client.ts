@@ -49,7 +49,7 @@ export function validateConfig(): ClientConfig {
 export interface CatalogClient {
   readonly endpoint: string;
   readonly region: CatalogAuth["region"];
-  query<TData, TVars extends Record<string, unknown> = Record<string, unknown>>(
+  execute<TData, TVars extends Record<string, unknown> = Record<string, unknown>>(
     document: string,
     variables?: TVars,
     options?: RequestOptions
@@ -81,7 +81,7 @@ function buildAbortController(
 export function createClient(config: ClientConfig): CatalogClient {
   const requestTimeoutMs = config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 
-  async function query<
+  async function execute<
     TData,
     TVars extends Record<string, unknown> = Record<string, unknown>,
   >(
@@ -147,7 +147,7 @@ export function createClient(config: ClientConfig): CatalogClient {
     return body.data;
   }
 
-  return { endpoint: config.endpoint, region: config.region, query };
+  return { endpoint: config.endpoint, region: config.region, execute };
 }
 
 function mapHttpStatusMessage(status: number): string {

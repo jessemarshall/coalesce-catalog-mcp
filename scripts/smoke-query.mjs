@@ -27,7 +27,7 @@ async function main() {
   const client = createClient(config);
   console.error(`[smoke] region=${config.region} endpoint=${config.endpoint}`);
 
-  const data = await client.query(GET_TABLES, {
+  const data = await client.execute(GET_TABLES, {
     pagination: { nbPerPage: 1, page: 0 },
   });
 

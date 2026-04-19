@@ -209,7 +209,7 @@ export function defineTableTools(client: CatalogClient): CatalogToolDefinition[]
           ),
           pagination: pagination as Pagination,
         };
-        const data = await c.query<{ getTables: GetTablesOutput }>(
+        const data = await c.execute<{ getTables: GetTablesOutput }>(
           GET_TABLES_SUMMARY,
           variables
         );
@@ -239,7 +239,7 @@ export function defineTableTools(client: CatalogClient): CatalogToolDefinition[]
       },
       handler: withErrorHandling(async (args, c) => {
         const id = args.id as string;
-        const data = await c.query<{ getTables: { data: unknown[] } }>(
+        const data = await c.execute<{ getTables: { data: unknown[] } }>(
           GET_TABLE_DETAIL,
           { ids: [id] }
         );
@@ -268,7 +268,7 @@ export function defineTableTools(client: CatalogClient): CatalogToolDefinition[]
           ),
           pagination: pagination as Pagination,
         };
-        const data = await c.query<{ getTableQueries: GetTableQueriesOutput }>(
+        const data = await c.execute<{ getTableQueries: GetTableQueriesOutput }>(
           GET_TABLE_QUERIES,
           variables
         );
@@ -322,7 +322,7 @@ export function defineTableTools(client: CatalogClient): CatalogToolDefinition[]
       },
       handler: withErrorHandling(async (args, c) => {
         const input = args.data as Array<UpdateTableInput & { tableType?: TableType }>;
-        const data = await c.query<{ updateTables: Table[] }>(UPDATE_TABLES, {
+        const data = await c.execute<{ updateTables: Table[] }>(UPDATE_TABLES, {
           data: input,
         });
         return { updated: data.updateTables.length, data: data.updateTables };

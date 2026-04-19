@@ -112,7 +112,7 @@ export function defineDashboardTools(
           ),
           pagination: pagination as Pagination,
         };
-        const data = await c.query<{ getDashboards: GetDashboardsOutput }>(
+        const data = await c.execute<{ getDashboards: GetDashboardsOutput }>(
           GET_DASHBOARDS_SUMMARY,
           variables
         );
@@ -134,7 +134,7 @@ export function defineDashboardTools(
       },
       handler: withErrorHandling(async (args, c) => {
         const id = args.id as string;
-        const data = await c.query<{ getDashboards: { data: unknown[] } }>(
+        const data = await c.execute<{ getDashboards: { data: unknown[] } }>(
           GET_DASHBOARD_DETAIL,
           { ids: [id] }
         );

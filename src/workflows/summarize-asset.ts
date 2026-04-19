@@ -129,18 +129,18 @@ export function defineSummarizeAsset(
       // sides, columns (table-only), quality (table-only).
       const detailPromise =
         kind === "TABLE"
-          ? c.query<{ getTables: { data: Record<string, unknown>[] } }>(
+          ? c.execute<{ getTables: { data: Record<string, unknown>[] } }>(
               GET_TABLE_DETAIL,
               { ids: [id] }
             )
-          : c.query<{ getDashboards: { data: Record<string, unknown>[] } }>(
+          : c.execute<{ getDashboards: { data: Record<string, unknown>[] } }>(
               GET_DASHBOARD_DETAIL,
               { ids: [id] }
             );
 
       const upstreamPromise =
         upstreamLimit > 0
-          ? c.query<{ getLineages: GetLineagesOutput }>(GET_LINEAGES, {
+          ? c.execute<{ getLineages: GetLineagesOutput }>(GET_LINEAGES, {
               scope:
                 kind === "TABLE"
                   ? { childTableId: id }
@@ -151,7 +151,7 @@ export function defineSummarizeAsset(
 
       const downstreamPromise =
         downstreamLimit > 0
-          ? c.query<{ getLineages: GetLineagesOutput }>(GET_LINEAGES, {
+          ? c.execute<{ getLineages: GetLineagesOutput }>(GET_LINEAGES, {
               scope:
                 kind === "TABLE"
                   ? { parentTableId: id }
@@ -162,7 +162,7 @@ export function defineSummarizeAsset(
 
       const columnsPromise =
         kind === "TABLE" && columnsLimit > 0
-          ? c.query<{ getColumns: GetColumnsOutput }>(GET_COLUMNS_SUMMARY, {
+          ? c.execute<{ getColumns: GetColumnsOutput }>(GET_COLUMNS_SUMMARY, {
               scope: { tableId: id },
               sorting: [{ sortingKey: "sourceOrder", direction: "ASC" }],
               pagination: { nbPerPage: columnsLimit, page: 0 },
@@ -171,7 +171,7 @@ export function defineSummarizeAsset(
 
       const qualityPromise =
         kind === "TABLE" && qualityLimit > 0
-          ? c.query<{ getDataQualities: GetQualityChecksOutput }>(
+          ? c.execute<{ getDataQualities: GetQualityChecksOutput }>(
               GET_DATA_QUALITIES,
               {
                 scope: { tableId: id },

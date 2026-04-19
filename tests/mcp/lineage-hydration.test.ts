@@ -19,7 +19,7 @@ function mockClient(
   return {
     endpoint: "https://mock.invalid/graphql",
     region: "eu",
-    async query<TData>(document: string): Promise<TData> {
+    async execute<TData>(document: string): Promise<TData> {
       for (const [key, value] of responses) {
         if (document.includes(key)) return value as TData;
       }
