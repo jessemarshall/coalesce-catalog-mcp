@@ -88,3 +88,17 @@ export function errorResult(message: string, detail?: unknown): ToolResult {
     isError: true,
   };
 }
+
+/**
+ * Structured non-error tool result for user-initiated declines (e.g. clicking
+ * "no" on a destructive-action confirmation). Uses the same `{ error, detail }`
+ * payload shape as errorResult so callers can parse it identically, but
+ * without `isError: true` — a decline is not a transport/tool failure, and
+ * clients filtering on isError shouldn't trigger retries/alerts on it.
+ */
+export function declineResult(message: string, detail?: unknown): ToolResult {
+  const payload = detail === undefined ? { error: message } : { error: message, detail };
+  return {
+    content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+  };
+}

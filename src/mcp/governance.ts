@@ -33,9 +33,7 @@ import type {
   EntitiesLinkInput,
   EntitiesLinkSorting,
   EntitiesLinkSortingKey,
-  EntitiesLinkTargetType,
   EntityTarget,
-  EntityTargetType,
   ExternalLink,
   ExternalLinkTechnology,
   GetEntitiesLinkOutput,
@@ -391,7 +389,7 @@ export function defineGovernanceTools(
             notFound: true,
             teamId: args.teamId,
             reason:
-              "Team not found within the first 10,000 accounts scanned.",
+              "Team not found within the first 10,000 teams scanned.",
           };
         }
         return sliceAssetIds(
@@ -422,7 +420,7 @@ export function defineGovernanceTools(
             notFound: true,
             teamId: args.teamId,
             reason:
-              "Team not found within the first 10,000 accounts scanned.",
+              "Team not found within the first 10,000 teams scanned.",
           };
         }
         return sliceAssetIds(

@@ -199,7 +199,7 @@ export function defineAnnotationTools(
       config: {
         title: "Search Catalog Tags",
         description:
-          "List tags defined in the Catalog. Tags are reusable labels that can be attached to tables, columns, dashboards, or terms (via the tag* mutation tools in Phase 4). Returns the tag identity (id, label, color) plus any linked term UUID (for glossary-backed tags).\n\n" +
+          "List tags defined in the Catalog. Tags are reusable labels that can be attached to tables, columns, dashboards, or terms (bind/unbind via `catalog_attach_tags` / `catalog_detach_tags`). Returns the tag identity (id, label, color) plus any linked term UUID (for glossary-backed tags).\n\n" +
           "Use for: discovering what tags already exist before creating a new one, looking up a tag UUID by label, or enumerating the color/taxonomy palette in use.",
         inputSchema: SearchTagsInputShape,
         annotations: READ_ONLY_ANNOTATIONS,

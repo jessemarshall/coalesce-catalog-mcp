@@ -40,14 +40,19 @@ interface RouterOpts {
 function makeRouter(opts: RouterOpts) {
   return makeMockClient((document, variables) => {
     if (document === GET_TABLES_DETAIL_BATCH) {
-      const vars = variables as { scope?: { ids?: string[]; schemaId?: string; databaseId?: string } };
-      const data = opts.tablesByScope(vars.scope ?? {});
+      const vars = variables as {
+        scope?: { ids?: string[]; schemaId?: string; databaseId?: string };
+        pagination: { nbPerPage: number; page: number };
+      };
+      const all = opts.tablesByScope(vars.scope ?? {});
+      const start = vars.pagination.page * vars.pagination.nbPerPage;
+      const slice = all.slice(start, start + vars.pagination.nbPerPage);
       return {
         getTables: {
-          totalCount: opts.totalTablesOverride ?? data.length,
-          nbPerPage: data.length,
-          page: 0,
-          data,
+          totalCount: opts.totalTablesOverride ?? all.length,
+          nbPerPage: vars.pagination.nbPerPage,
+          page: vars.pagination.page,
+          data: slice,
         },
       };
     }
@@ -107,7 +112,23 @@ describe("catalog_governance_scorecard — scope validation", () => {
     expect(out.error).toMatch(/Scope required/);
   });
 
-  it("most-specific scope wins when multiple are passed (tableIds > schemaId > databaseId)", async () => {
+  it("refuses (with isError: true) when multiple scope fields are passed", async () => {
+    const client = makeMockClient(() => {
+      throw new Error("unexpected — handler should refuse before dispatching");
+    });
+    const tool = defineGovernanceScorecard(client);
+    const res = await tool.handler({
+      databaseId: "db-1",
+      schemaId: "sch-1",
+      tableIds: ["t-1"],
+    });
+    expect(res.isError).toBe(true);
+    const out = parseResult(res);
+    expect(out.error).toMatch(/Multiple scope fields/i);
+    expect(out.error).toMatch(/databaseId.*schemaId.*tableIds/);
+  });
+
+  it("picks the one scope when exactly one is provided", async () => {
     let capturedScope: Record<string, unknown> = {};
     const client = makeMockClient((document, variables) => {
       if (document === GET_TABLES_DETAIL_BATCH) {
@@ -119,16 +140,9 @@ describe("catalog_governance_scorecard — scope validation", () => {
       throw new Error("unexpected");
     });
     const tool = defineGovernanceScorecard(client);
-    await tool.handler({
-      databaseId: "db-1",
-      schemaId: "sch-1",
-      tableIds: ["t-1"],
-    });
-    expect(capturedScope).toEqual({ ids: ["t-1"] });
-    const out = parseResult(
-      await tool.handler({ databaseId: "db-1", schemaId: "sch-1" })
-    );
+    const out = parseResult(await tool.handler({ schemaId: "sch-1" }));
     expect(out.scopedBy).toBe("schemaId");
+    expect(capturedScope).toEqual({ schemaId: "sch-1" });
   });
 });
 

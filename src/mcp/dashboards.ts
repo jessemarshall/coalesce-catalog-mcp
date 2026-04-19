@@ -126,7 +126,7 @@ export function defineDashboardTools(
       config: {
         title: "Get Catalog Dashboard Detail",
         description:
-          "Fetch the full detail for a single dashboard by its Catalog UUID, including description provenance, ownership (users + teams), tags, folder location, external slug/URL, and verification/deprecation state. Returns null if no dashboard matches. For the source/BI-tool metadata, use the returned sourceId with a future catalog_get_source call.",
+          "Fetch the full detail for a single dashboard by its Catalog UUID, including description provenance, ownership (users + teams), tags, folder location, external slug/URL, and verification/deprecation state. Returns null if no dashboard matches.",
         inputSchema: {
           id: z.string().min(1).describe("Catalog UUID of the dashboard."),
         },
