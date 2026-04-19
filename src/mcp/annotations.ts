@@ -48,6 +48,7 @@ import {
   SortDirectionSchema,
 } from "../schemas/sorting.js";
 import { listEnvelope, withErrorHandling } from "./tool-helpers.js";
+import { withConfirmation } from "./confirmation.js";
 
 // ── Tags ────────────────────────────────────────────────────────────────────
 
@@ -349,17 +350,24 @@ export function defineAnnotationTools(
         },
         annotations: DESTRUCTIVE_ANNOTATIONS,
       },
-      handler: withErrorHandling(async (args, c) => {
-        const input = args.data as Array<{
-          entityType: TagEntityType;
-          entityId: string;
-          label: string;
-        }>;
-        const data = await c.execute<{ detachTags: boolean }>(DETACH_TAGS, {
-          data: input satisfies BaseTagEntityInput[],
-        });
-        return { success: data.detachTags, detached: input.length };
-      }, client),
+      handler: withErrorHandling(
+        withConfirmation<{
+          data: Array<{ entityType: TagEntityType; entityId: string; label: string }>;
+        }>(
+          {
+            action: "Detach tags from entities",
+            summarize: (a) => `Remove ${a.data.length} tag binding(s) from entities.`,
+          },
+          async (args, c) => {
+            const input = args.data;
+            const data = await c.execute<{ detachTags: boolean }>(DETACH_TAGS, {
+              data: input satisfies BaseTagEntityInput[],
+            });
+            return { success: data.detachTags, detached: input.length };
+          }
+        ),
+        client
+      ),
     },
 
     // ── Term CRUD ──────────────────────────────────────────────────────────
@@ -459,13 +467,23 @@ export function defineAnnotationTools(
         },
         annotations: DESTRUCTIVE_ANNOTATIONS,
       },
-      handler: withErrorHandling(async (args, c) => {
-        const input: DeleteTermInput = { id: args.id as string };
-        const data = await c.execute<{ deleteTerm: boolean }>(DELETE_TERM, {
-          data: input,
-        });
-        return { success: data.deleteTerm, id: input.id };
-      }, client),
+      handler: withErrorHandling(
+        withConfirmation<{ id: string }>(
+          {
+            action: "Delete glossary term",
+            summarize: (a) =>
+              `Permanently delete term ${a.id}. Child terms will be orphaned.`,
+          },
+          async (args, c) => {
+            const input: DeleteTermInput = { id: args.id };
+            const data = await c.execute<{ deleteTerm: boolean }>(DELETE_TERM, {
+              data: input,
+            });
+            return { success: data.deleteTerm, id: input.id };
+          }
+        ),
+        client
+      ),
     },
   ];
 }

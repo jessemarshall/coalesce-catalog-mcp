@@ -45,6 +45,7 @@ import {
   SortDirectionSchema,
 } from "../schemas/sorting.js";
 import { listEnvelope, withErrorHandling } from "./tool-helpers.js";
+import { withConfirmation } from "./confirmation.js";
 
 // ── Shared lineage enums ────────────────────────────────────────────────────
 
@@ -635,14 +636,23 @@ export function defineLineageTools(
         },
         annotations: DESTRUCTIVE_ANNOTATIONS,
       },
-      handler: withErrorHandling(async (args, c) => {
-        const input = args.data as DeleteLineageInput[];
-        const data = await c.execute<{ deleteLineages: boolean }>(
-          DELETE_LINEAGES,
-          { data: input }
-        );
-        return { success: data.deleteLineages, deleted: input.length };
-      }, client),
+      handler: withErrorHandling(
+        withConfirmation<{ data: DeleteLineageInput[] }>(
+          {
+            action: "Delete lineage edges",
+            summarize: (a) => `Permanently delete ${a.data.length} lineage edge(s).`,
+          },
+          async (args, c) => {
+            const input = args.data;
+            const data = await c.execute<{ deleteLineages: boolean }>(
+              DELETE_LINEAGES,
+              { data: input }
+            );
+            return { success: data.deleteLineages, deleted: input.length };
+          }
+        ),
+        client
+      ),
     },
   ];
 }

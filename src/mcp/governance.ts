@@ -68,6 +68,7 @@ import {
   SortDirectionSchema,
 } from "../schemas/sorting.js";
 import { listEnvelope, withErrorHandling } from "./tool-helpers.js";
+import { withConfirmation } from "./confirmation.js";
 
 // ── Payload shaping for search_users / search_teams ─────────────────────────
 // The public API inlines ownedAssetIds (and memberIds for teams) as
@@ -573,14 +574,23 @@ export function defineGovernanceTools(
         },
         annotations: DESTRUCTIVE_ANNOTATIONS,
       },
-      handler: withErrorHandling(async (args, c) => {
-        const input = args.data as DeleteExternalLinkInput[];
-        const data = await c.execute<{ deleteExternalLinks: boolean }>(
-          DELETE_EXTERNAL_LINKS,
-          { data: input }
-        );
-        return { success: data.deleteExternalLinks, deleted: input.length };
-      }, client),
+      handler: withErrorHandling(
+        withConfirmation<{ data: DeleteExternalLinkInput[] }>(
+          {
+            action: "Delete external links",
+            summarize: (a) => `Permanently delete ${a.data.length} external link(s).`,
+          },
+          async (args, c) => {
+            const input = args.data;
+            const data = await c.execute<{ deleteExternalLinks: boolean }>(
+              DELETE_EXTERNAL_LINKS,
+              { data: input }
+            );
+            return { success: data.deleteExternalLinks, deleted: input.length };
+          }
+        ),
+        client
+      ),
     },
 
     // ── Quality checks mutations ──────────────────────────────────────────
@@ -666,22 +676,31 @@ export function defineGovernanceTools(
         },
         annotations: DESTRUCTIVE_ANNOTATIONS,
       },
-      handler: withErrorHandling(async (args, c) => {
-        const input: RemoveQualityChecksInput = {
-          qualityChecks: args.qualityChecks as Array<{
-            tableId: string;
-            externalId: string;
-          }>,
-        };
-        const data = await c.execute<{ removeDataQualities: boolean }>(
-          REMOVE_DATA_QUALITIES,
-          { data: input }
-        );
-        return {
-          success: data.removeDataQualities,
-          removed: input.qualityChecks.length,
-        };
-      }, client),
+      handler: withErrorHandling(
+        withConfirmation<{
+          qualityChecks: Array<{ tableId: string; externalId: string }>;
+        }>(
+          {
+            action: "Remove data quality checks",
+            summarize: (a) =>
+              `Remove ${a.qualityChecks.length} quality-check row(s).`,
+          },
+          async (args, c) => {
+            const input: RemoveQualityChecksInput = {
+              qualityChecks: args.qualityChecks,
+            };
+            const data = await c.execute<{ removeDataQualities: boolean }>(
+              REMOVE_DATA_QUALITIES,
+              { data: input }
+            );
+            return {
+              success: data.removeDataQualities,
+              removed: input.qualityChecks.length,
+            };
+          }
+        ),
+        client
+      ),
     },
 
     // ── Ownership writes ───────────────────────────────────────────────────
@@ -742,19 +761,31 @@ export function defineGovernanceTools(
         },
         annotations: DESTRUCTIVE_ANNOTATIONS,
       },
-      handler: withErrorHandling(async (args, c) => {
-        const input: OwnerInput = {
-          userId: args.userId as string,
-          ...(Array.isArray(args.targetEntities)
-            ? { targetEntities: args.targetEntities as EntityTarget[] }
-            : {}),
-        };
-        const data = await c.execute<{ removeUserOwners: boolean }>(
-          REMOVE_USER_OWNERS,
-          { data: input }
-        );
-        return { success: data.removeUserOwners, userId: input.userId };
-      }, client),
+      handler: withErrorHandling(
+        withConfirmation<{ userId: string; targetEntities?: EntityTarget[] }>(
+          {
+            action: "Remove user ownership",
+            summarize: (a) =>
+              a.targetEntities && a.targetEntities.length > 0
+                ? `Strip user ${a.userId} from ${a.targetEntities.length} asset(s).`
+                : `Strip user ${a.userId} from ALL owned assets.`,
+          },
+          async (args, c) => {
+            const input: OwnerInput = {
+              userId: args.userId,
+              ...(Array.isArray(args.targetEntities)
+                ? { targetEntities: args.targetEntities }
+                : {}),
+            };
+            const data = await c.execute<{ removeUserOwners: boolean }>(
+              REMOVE_USER_OWNERS,
+              { data: input }
+            );
+            return { success: data.removeUserOwners, userId: input.userId };
+          }
+        ),
+        client
+      ),
     },
 
     {
@@ -812,19 +843,31 @@ export function defineGovernanceTools(
         },
         annotations: DESTRUCTIVE_ANNOTATIONS,
       },
-      handler: withErrorHandling(async (args, c) => {
-        const input: TeamOwnerInput = {
-          teamId: args.teamId as string,
-          ...(Array.isArray(args.targetEntities)
-            ? { targetEntities: args.targetEntities as EntityTarget[] }
-            : {}),
-        };
-        const data = await c.execute<{ removeTeamOwners: boolean }>(
-          REMOVE_TEAM_OWNERS,
-          { data: input }
-        );
-        return { success: data.removeTeamOwners, teamId: input.teamId };
-      }, client),
+      handler: withErrorHandling(
+        withConfirmation<{ teamId: string; targetEntities?: EntityTarget[] }>(
+          {
+            action: "Remove team ownership",
+            summarize: (a) =>
+              a.targetEntities && a.targetEntities.length > 0
+                ? `Strip team ${a.teamId} from ${a.targetEntities.length} asset(s).`
+                : `Strip team ${a.teamId} from ALL owned assets.`,
+          },
+          async (args, c) => {
+            const input: TeamOwnerInput = {
+              teamId: args.teamId,
+              ...(Array.isArray(args.targetEntities)
+                ? { targetEntities: args.targetEntities }
+                : {}),
+            };
+            const data = await c.execute<{ removeTeamOwners: boolean }>(
+              REMOVE_TEAM_OWNERS,
+              { data: input }
+            );
+            return { success: data.removeTeamOwners, teamId: input.teamId };
+          }
+        ),
+        client
+      ),
     },
 
     // ── Team management ────────────────────────────────────────────────────
@@ -908,17 +951,30 @@ export function defineGovernanceTools(
         },
         annotations: DESTRUCTIVE_ANNOTATIONS,
       },
-      handler: withErrorHandling(async (args, c) => {
-        const input: TeamUsersInput = {
-          id: args.id as string,
-          emails: args.emails as string[],
-        };
-        const data = await c.execute<{ removeTeamUsers: boolean }>(
-          REMOVE_TEAM_USERS,
-          { data: input }
-        );
-        return { success: data.removeTeamUsers, removed: input.emails.length };
-      }, client),
+      handler: withErrorHandling(
+        withConfirmation<{ id: string; emails: string[] }>(
+          {
+            action: "Remove users from team",
+            summarize: (a) =>
+              `Remove ${a.emails.length} user(s) from team ${a.id}.`,
+          },
+          async (args, c) => {
+            const input: TeamUsersInput = {
+              id: args.id,
+              emails: args.emails,
+            };
+            const data = await c.execute<{ removeTeamUsers: boolean }>(
+              REMOVE_TEAM_USERS,
+              { data: input }
+            );
+            return {
+              success: data.removeTeamUsers,
+              removed: input.emails.length,
+            };
+          }
+        ),
+        client
+      ),
     },
 
     // ── Pinned assets mutations ────────────────────────────────────────────
@@ -1010,14 +1066,23 @@ export function defineGovernanceTools(
         },
         annotations: DESTRUCTIVE_ANNOTATIONS,
       },
-      handler: withErrorHandling(async (args, c) => {
-        const input = args.data as EntitiesLinkInput[];
-        const data = await c.execute<{ removePinnedAssets: boolean }>(
-          REMOVE_PINNED_ASSETS,
-          { data: input }
-        );
-        return { success: data.removePinnedAssets, removed: input.length };
-      }, client),
+      handler: withErrorHandling(
+        withConfirmation<{ data: EntitiesLinkInput[] }>(
+          {
+            action: "Remove pinned asset links",
+            summarize: (a) => `Remove ${a.data.length} pinned-asset link(s).`,
+          },
+          async (args, c) => {
+            const input = args.data;
+            const data = await c.execute<{ removePinnedAssets: boolean }>(
+              REMOVE_PINNED_ASSETS,
+              { data: input }
+            );
+            return { success: data.removePinnedAssets, removed: input.length };
+          }
+        ),
+        client
+      ),
     },
   ];
 }

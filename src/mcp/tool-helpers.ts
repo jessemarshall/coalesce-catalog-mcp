@@ -1,6 +1,22 @@
 import type { CatalogClient } from "../client.js";
 import { CatalogApiError, CatalogGraphQLError } from "../client.js";
-import { errorResult, textResult, type ToolResult } from "../catalog/types.js";
+import {
+  errorResult,
+  textResult,
+  type ToolHandlerExtra,
+  type ToolResult,
+} from "../catalog/types.js";
+
+/**
+ * Sentinel a wrapper (e.g. withConfirmation) can throw to short-circuit
+ * with a non-error tool result — used so wrappers can return user-facing
+ * messages without piggybacking on the error path.
+ */
+export class ToolEarlyReturn extends Error {
+  constructor(public readonly result: ToolResult) {
+    super("ToolEarlyReturn");
+  }
+}
 
 /**
  * Wrap a tool implementation so that thrown Catalog errors become structured
@@ -9,14 +25,19 @@ import { errorResult, textResult, type ToolResult } from "../catalog/types.js";
  * silently crashing.
  */
 export function withErrorHandling<TArgs extends Record<string, unknown>>(
-  impl: (args: TArgs, client: CatalogClient) => Promise<unknown>,
+  impl: (
+    args: TArgs,
+    client: CatalogClient,
+    extra?: ToolHandlerExtra
+  ) => Promise<unknown>,
   client: CatalogClient
-): (args: TArgs) => Promise<ToolResult> {
-  return async (args) => {
+): (args: TArgs, extra?: ToolHandlerExtra) => Promise<ToolResult> {
+  return async (args, extra) => {
     try {
-      const result = await impl(args, client);
+      const result = await impl(args, client, extra);
       return textResult(result);
     } catch (err) {
+      if (err instanceof ToolEarlyReturn) return err.result;
       if (err instanceof CatalogGraphQLError) {
         return errorResult(err.message, {
           kind: "graphql_error",

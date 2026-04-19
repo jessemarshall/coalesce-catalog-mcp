@@ -18,3 +18,11 @@ export const DEFAULT_PAGE_SIZE = 100;
 export const MAX_PAGE_SIZE = 500;
 
 export const READ_ONLY_ENV_VAR = "COALESCE_CATALOG_READ_ONLY";
+
+/**
+ * When set to "true", destructive tools skip the elicitation confirmation
+ * step. Intended for non-interactive deployments (CI, scripted batch jobs)
+ * where the operator has already vetted the call. Default behavior is to
+ * require an interactive accept via the MCP elicitation protocol.
+ */
+export const SKIP_CONFIRMATIONS_ENV_VAR = "COALESCE_CATALOG_SKIP_CONFIRMATIONS";
