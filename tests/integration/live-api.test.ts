@@ -196,13 +196,19 @@ describeLive("live API integration (requires COALESCE_CATALOG_API_KEY)", () => {
     expect(obj.summary.severityCounts).toBeDefined();
   }, 60000);
 
-  it("surfaces GraphQL validation errors as structured isError responses", async () => {
-    // Malformed UUID triggers server-side argument validation
+  it("handles a malformed UUID without crashing — either structured isError or empty table", async () => {
     const res = await callTool("catalog_get_table", { id: "definitely-not-a-uuid" });
-    // Either isError=true with structured GraphQL error, or empty table
-    // (depending on the API's tolerance). Both are acceptable — the key
-    // assertion is we don't crash / hang.
-    expect(res.content[0].text).toBeTruthy();
+    // Two acceptable outcomes (depending on the API's tolerance): a
+    // structured isError, or a successful response with table=null. Anything
+    // else (truthy body that's neither shape) is a regression.
+    if (res.isError === true) {
+      const body = JSON.parse(res.content[0].text);
+      expect(body.error).toBeTruthy();
+    } else {
+      const body = JSON.parse(res.content[0].text);
+      // Successful path: table should be explicitly null/absent.
+      expect(body.table === null || body.table === undefined).toBe(true);
+    }
   }, 30000);
 
   // Smoke tests for hand-written GraphQL operations introduced for the
