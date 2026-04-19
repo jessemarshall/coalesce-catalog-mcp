@@ -119,11 +119,18 @@ function pickScope(args: {
 }
 
 function hasOwner(row: Record<string, unknown>): boolean {
+  // Filter out owner entities whose userId/teamId is null — the binding row
+  // exists but doesn't actually point at a user/team. For governance audit
+  // purposes that's functionally unowned, not silently owned.
   const userOwners = Array.isArray(row.ownerEntities)
-    ? (row.ownerEntities as unknown[]).length
+    ? (row.ownerEntities as Array<Record<string, unknown>>).filter(
+        (o) => o.userId != null
+      ).length
     : 0;
   const teamOwners = Array.isArray(row.teamOwnerEntities)
-    ? (row.teamOwnerEntities as unknown[]).length
+    ? (row.teamOwnerEntities as Array<Record<string, unknown>>).filter(
+        (t) => t.teamId != null
+      ).length
     : 0;
   return userOwners + teamOwners > 0;
 }
@@ -154,8 +161,14 @@ async function fetchColumnsForTableBatch(
     counts.set(id, { described: 0, total: 0, capped: false });
   }
 
-  let page = 0;
-  for (;;) {
+  // Hard ceiling so a misbehaving server (e.g. nbPerPage not honoured, or
+  // totalCount stuck at NaN/0 while data keeps flowing) can't wedge the call.
+  // Theoretical max is tableIds.length * perTableCap columns; convert to
+  // pages and add slack for response-size variance.
+  const maxPages =
+    Math.ceil((tableIds.length * perTableCap) / COLUMN_PAGE_SIZE) + 5;
+
+  for (let page = 0; page < maxPages; page++) {
     const resp = await client.execute<{ getColumns: GetColumnsOutput }>(
       GET_COLUMNS_SUMMARY,
       {
@@ -180,10 +193,16 @@ async function fetchColumnsForTableBatch(
     const fetchedSoFar = (page + 1) * COLUMN_PAGE_SIZE;
     if (rows.length < COLUMN_PAGE_SIZE) break;
     if (fetchedSoFar >= resp.getColumns.totalCount) break;
-    // Safety: if every table in the batch has hit its cap, no point paginating
-    // further — the additional rows would all be skipped.
+    // If every table in the batch has hit its cap, additional rows would all
+    // be skipped — stop paginating.
     if ([...counts.values()].every((c) => c.capped)) break;
-    page += 1;
+    if (page === maxPages - 1) {
+      throw new Error(
+        `Column pagination exceeded ${maxPages} pages for ${tableIds.length} ` +
+          `tables (perTableCap=${perTableCap}). Likely server returning ` +
+          `duplicate pages or non-numeric totalCount.`
+      );
+    }
   }
 
   const out = new Map<
@@ -299,7 +318,19 @@ async function fetchQualityCountsForTables(
               pagination: { nbPerPage: 1, page: 0 },
             }
           )
-          .then((r) => ({ id, total: r.getDataQualities.totalCount }))
+          .then((r) => {
+            const total = r.getDataQualities.totalCount;
+            if (typeof total !== "number" || !Number.isFinite(total)) {
+              // Defending against schema drift: a non-numeric totalCount would
+              // silently bucket every table as "no quality checks" and drop
+              // checkedPct to 0 — surfacing an emergency that doesn't exist.
+              throw new Error(
+                `getDataQualities returned non-numeric totalCount (${String(total)}) ` +
+                  `for tableId=${id}; cannot compute quality coverage.`
+              );
+            }
+            return { id, total };
+          })
       )
     );
     for (const r of results) counts.set(r.id, r.total);
@@ -331,11 +362,13 @@ export function defineGovernanceScorecard(
     handler: withErrorHandling(async (args, c) => {
       const scope = pickScope(args);
       if (!scope) {
-        return {
-          error:
-            "Scope required: pass one of databaseId, schemaId, or tableIds. " +
-            "The scorecard is not safe to run unscoped — it would attempt to load every table in the workspace.",
-        };
+        // Throw so withErrorHandling sets isError: true; clients filtering on
+        // isError otherwise treat scope-required as a successful response with
+        // an error key, which is the wrong shape for retries / pipelines.
+        throw new Error(
+          "Scope required: pass one of databaseId, schemaId, or tableIds. " +
+            "The scorecard is not safe to run unscoped — it would attempt to load every table in the workspace."
+        );
       }
       const weighting =
         (args.weighting as "popularity" | "equal" | undefined) ?? "popularity";
@@ -356,14 +389,12 @@ export function defineGovernanceScorecard(
       const out = tablesResp.getTables;
 
       if (out.totalCount > TABLE_HARD_CAP) {
-        return {
-          error:
-            `Scope resolves to ${out.totalCount} tables, exceeding the ` +
-            `${TABLE_HARD_CAP}-table cap for one scorecard call. Narrow via ` +
-            `schemaId or split into smaller tableIds batches.`,
-          tableCount: out.totalCount,
-          scopedBy: scope.field,
-        };
+        // Same reasoning as the scope-required throw above.
+        throw new Error(
+          `Scope resolves to ${out.totalCount} tables (scoped by ${scope.field}), ` +
+            `exceeding the ${TABLE_HARD_CAP}-table cap for one scorecard call. ` +
+            `Narrow via schemaId or split into smaller tableIds batches.`
+        );
       }
       const tables = out.data as Array<Record<string, unknown>>;
       if (tables.length === 0) {

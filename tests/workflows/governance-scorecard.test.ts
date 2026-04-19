@@ -95,13 +95,14 @@ function makeColumns(tableId: string, total: number, describedCount: number): Mo
 }
 
 describe("catalog_governance_scorecard — scope validation", () => {
-  it("refuses when no scope is provided (would attempt to load every table)", async () => {
+  it("refuses (with isError: true) when no scope is provided", async () => {
     const client = makeRouter({
       tablesByScope: () => [],
       columnsByTableIds: new Map(),
     });
     const tool = defineGovernanceScorecard(client);
     const res = await tool.handler({});
+    expect(res.isError).toBe(true);
     const out = parseResult(res);
     expect(out.error).toMatch(/Scope required/);
   });
@@ -341,7 +342,7 @@ describe("catalog_governance_scorecard — aggregate weighting", () => {
 });
 
 describe("catalog_governance_scorecard — refusal on oversized scope", () => {
-  it("refuses when totalCount exceeds the 500-table hard cap", async () => {
+  it("refuses (with isError: true) when totalCount exceeds the 500-table hard cap", async () => {
     const tables: MockTable[] = Array.from({ length: 500 }, (_, i) => ({
       id: `t-${i}`,
       name: `T${i}`,
@@ -354,11 +355,11 @@ describe("catalog_governance_scorecard — refusal on oversized scope", () => {
     });
     const tool = defineGovernanceScorecard(client);
     const res = await tool.handler({ databaseId: "db-large" });
+    expect(res.isError).toBe(true);
     const out = parseResult(res);
     expect(out.error).toMatch(/750 tables/);
     expect(out.error).toMatch(/500-table cap/);
-    expect(out.tableCount).toBe(750);
-    expect(out.scopedBy).toBe("databaseId");
+    expect(out.error).toMatch(/databaseId/);
   });
 
   it("processes exactly 500 tables (at the cap, not over)", async () => {
