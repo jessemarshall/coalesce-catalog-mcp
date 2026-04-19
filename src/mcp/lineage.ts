@@ -414,17 +414,19 @@ function enrichAssetEdge(
   hydrationMap: Map<string, HydratedEndpoint> | null
 ): Record<string, unknown> {
   const parentId = edge.parentTableId ?? edge.parentDashboardId ?? undefined;
+  const parentKind: "TABLE" | "DASHBOARD" = edge.parentTableId ? "TABLE" : "DASHBOARD";
   const childId = edge.childTableId ?? edge.childDashboardId ?? undefined;
+  const childKind: "TABLE" | "DASHBOARD" = edge.childTableId ? "TABLE" : "DASHBOARD";
   return {
     ...edge,
     ...(direction ? { direction } : {}),
     createdAtIso: toIso(edge.createdAt),
     refreshedAtIso: toIso(edge.refreshedAt),
     ...(hydrationMap && parentId
-      ? { parent: hydrationMap.get(parentId) ?? { id: parentId, kind: "TABLE" } }
+      ? { parent: hydrationMap.get(parentId) ?? { id: parentId, kind: parentKind } }
       : {}),
     ...(hydrationMap && childId
-      ? { child: hydrationMap.get(childId) ?? { id: childId, kind: "TABLE" } }
+      ? { child: hydrationMap.get(childId) ?? { id: childId, kind: childKind } }
       : {}),
   };
 }
@@ -436,21 +438,29 @@ function enrichFieldEdge(
 ): Record<string, unknown> {
   const parentId =
     edge.parentColumnId ?? edge.parentDashboardFieldId ?? undefined;
+  const parentKind: HydratedEndpoint["kind"] = edge.parentColumnId
+    ? "COLUMN"
+    : "DASHBOARD_FIELD";
   const childId =
     edge.childColumnId ??
     edge.childDashboardFieldId ??
     edge.childDashboardId ??
     undefined;
+  const childKind: HydratedEndpoint["kind"] = edge.childColumnId
+    ? "COLUMN"
+    : edge.childDashboardFieldId
+      ? "DASHBOARD_FIELD"
+      : "DASHBOARD";
   return {
     ...edge,
     ...(direction ? { direction } : {}),
     createdAtIso: toIso(edge.createdAt),
     refreshedAtIso: toIso(edge.refreshedAt),
     ...(hydrationMap && parentId
-      ? { parent: hydrationMap.get(parentId) ?? { id: parentId, kind: "COLUMN" } }
+      ? { parent: hydrationMap.get(parentId) ?? { id: parentId, kind: parentKind } }
       : {}),
     ...(hydrationMap && childId
-      ? { child: hydrationMap.get(childId) ?? { id: childId, kind: "COLUMN" } }
+      ? { child: hydrationMap.get(childId) ?? { id: childId, kind: childKind } }
       : {}),
   };
 }

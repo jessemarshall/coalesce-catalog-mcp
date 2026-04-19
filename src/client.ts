@@ -11,11 +11,6 @@ export interface ClientConfig extends CatalogAuth {
 export interface RequestOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
-  /**
-   * Whether this operation is a mutation. Mutations are never retried on
-   * transient failures because retry semantics are unsafe without idempotency.
-   */
-  isMutation?: boolean;
 }
 
 export interface GraphQLError {
