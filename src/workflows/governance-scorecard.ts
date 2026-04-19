@@ -7,9 +7,11 @@ import {
 import {
   GET_TABLES_DETAIL_BATCH,
   GET_COLUMNS_SUMMARY,
+  GET_DATA_QUALITIES,
 } from "../catalog/operations.js";
 import type {
   GetColumnsOutput,
+  GetQualityChecksOutput,
   GetTablesOutput,
 } from "../generated/types.js";
 import { withErrorHandling } from "../mcp/tool-helpers.js";
@@ -44,11 +46,18 @@ const ScorecardInputShape = {
     .describe(
       "Max columns to inspect per table when computing column-doc coverage. Default 200. Wide-table outliers (1000+ col staging tables) are sampled to this cap; their `columnDocCoverage` row reports `sampled: true`."
     ),
+  includeQualityCoverage: z
+    .boolean()
+    .optional()
+    .describe(
+      "Add the 'checked' axis: per-table qualityCheckCount + hasQualityCheck flag, plus aggregate checkedPct. Costs one extra `getDataQualities` call per table (the API doesn't batch by tableIds), parallelised in groups of 20. Default false to keep the default scorecard fast; set true for a complete 5-axis coverage matrix."
+    ),
 };
 
 const TABLE_HARD_CAP = 500;
 const TABLE_BATCH_SIZE = 50;
 const COLUMN_PAGE_SIZE = 500;
+const QUALITY_PARALLELISM = 20;
 
 interface TableScoreRow {
   id: string;
@@ -67,15 +76,21 @@ interface TableScoreRow {
         sampled: boolean;
       }
     | { error: string };
+  // Only populated when includeQualityCoverage is true.
+  qualityCheckCount?: number;
+  hasQualityCheck?: boolean;
 }
 
 interface ScorecardAggregate {
   weighting: "popularity" | "equal";
+  axes: string[];
   tableCount: number;
   ownedPct: number;
   describedPct: number;
   taggedPct: number;
   columnDocPct: number;
+  // Present only when includeQualityCoverage is true.
+  checkedPct?: number;
   governanceScore: number;
 }
 
@@ -183,16 +198,22 @@ async function fetchColumnsForTableBatch(
 
 function computeAggregate(
   rows: TableScoreRow[],
-  weighting: "popularity" | "equal"
+  weighting: "popularity" | "equal",
+  qualityIncluded: boolean
 ): ScorecardAggregate {
+  const baseAxes = ["owned", "described", "tagged", "columnDoc"];
+  const axes = qualityIncluded ? [...baseAxes, "checked"] : baseAxes;
+
   if (rows.length === 0) {
     return {
       weighting,
+      axes,
       tableCount: 0,
       ownedPct: 0,
       describedPct: 0,
       taggedPct: 0,
       columnDocPct: 0,
+      ...(qualityIncluded ? { checkedPct: 0 } : {}),
       governanceScore: 0,
     };
   }
@@ -232,19 +253,58 @@ function computeAggregate(
   const describedPct = weightedPct((r) => r.hasDescription);
   const taggedPct = weightedPct((r) => r.tagCount > 0);
   const columnDocPct = weightedColumnDocPct();
+  const checkedPct = qualityIncluded
+    ? weightedPct((r) => r.hasQualityCheck === true)
+    : undefined;
+
+  // Score adapts to the measured axes — a 4-axis report and a 5-axis report
+  // are not directly comparable, but each is internally consistent.
+  const partsForScore = qualityIncluded
+    ? [ownedPct, describedPct, taggedPct, columnDocPct, checkedPct as number]
+    : [ownedPct, describedPct, taggedPct, columnDocPct];
   const governanceScore = Math.round(
-    (ownedPct + describedPct + taggedPct + columnDocPct) / 4
+    partsForScore.reduce((a, b) => a + b, 0) / partsForScore.length
   );
 
   return {
     weighting,
+    axes,
     tableCount: rows.length,
     ownedPct,
     describedPct,
     taggedPct,
     columnDocPct,
+    ...(qualityIncluded ? { checkedPct } : {}),
     governanceScore,
   };
+}
+
+async function fetchQualityCountsForTables(
+  client: CatalogClient,
+  tableIds: string[]
+): Promise<Map<string, number>> {
+  // The quality endpoint only filters by single tableId — no tableIds batch
+  // scope. Run N calls bounded by QUALITY_PARALLELISM so we don't open 500
+  // sockets at once. Each call asks for one row to get the totalCount cheaply.
+  const counts = new Map<string, number>();
+  for (let i = 0; i < tableIds.length; i += QUALITY_PARALLELISM) {
+    const slice = tableIds.slice(i, i + QUALITY_PARALLELISM);
+    const results = await Promise.all(
+      slice.map((id) =>
+        client
+          .execute<{ getDataQualities: GetQualityChecksOutput }>(
+            GET_DATA_QUALITIES,
+            {
+              scope: { tableId: id },
+              pagination: { nbPerPage: 1, page: 0 },
+            }
+          )
+          .then((r) => ({ id, total: r.getDataQualities.totalCount }))
+      )
+    );
+    for (const r of results) counts.set(r.id, r.total);
+  }
+  return counts;
 }
 
 export function defineGovernanceScorecard(
@@ -262,7 +322,8 @@ export function defineGovernanceScorecard(
         "  - hasDescription: non-empty `description` field (Catalog or external source).\n" +
         "  - columnDocCoverage: described columns / total columns. Inspects up to `perTableColumnCap` columns per table (default 200); wide outliers report `sampled: true`.\n" +
         "  - tagCount: count of attached tags.\n" +
-        "Aggregate `governanceScore` = simple mean of (ownedPct, describedPct, taggedPct, columnDocPct), each computed under the chosen weighting (popularity-weighted by default; pass `weighting: 'equal'` for one-table-one-vote audits).\n\n" +
+        "  - hasQualityCheck (opt-in via `includeQualityCoverage: true`): any data-quality check attached. Adds N parallel calls (one per table); excluded by default to keep the scorecard fast.\n" +
+        "Aggregate `governanceScore` = mean of the measured percentages under the chosen weighting (popularity-weighted by default; pass `weighting: 'equal'` for one-table-one-vote audits). The `axes` field on the aggregate lists exactly which axes contributed — a 4-axis report and a 5-axis report are not directly comparable, but each is internally consistent.\n\n" +
         "Per-table rows are returned ranked by popularity DESC. Use to drive Catalog 'Health' dashboards or governance-rollout playbooks.",
       inputSchema: ScorecardInputShape,
       annotations: READ_ONLY_ANNOTATIONS,
@@ -280,6 +341,8 @@ export function defineGovernanceScorecard(
         (args.weighting as "popularity" | "equal" | undefined) ?? "popularity";
       const perTableColumnCap =
         (args.perTableColumnCap as number | undefined) ?? 200;
+      const includeQualityCoverage =
+        (args.includeQualityCoverage as boolean | undefined) ?? false;
 
       // Fetch the in-scope tables with detail fields (owners + tags + description).
       const tablesResp = await c.execute<{ getTables: GetTablesOutput }>(
@@ -307,19 +370,25 @@ export function defineGovernanceScorecard(
         return {
           scopedBy: scope.field,
           tableCount: 0,
-          aggregate: computeAggregate([], weighting),
+          aggregate: computeAggregate([], weighting, includeQualityCoverage),
           tables: [],
         };
       }
 
-      // Fetch columns in table-batches, parallelized.
+      // Fetch columns in table-batches and (optional) quality counts in
+      // parallel — they target different endpoints so they don't compete.
       const tableIds = tables.map((t) => t.id as string);
       const batches = chunk(tableIds, TABLE_BATCH_SIZE);
-      const coverageMaps = await Promise.all(
-        batches.map((batch) =>
-          fetchColumnsForTableBatch(c, batch, perTableColumnCap)
-        )
-      );
+      const [coverageMaps, qualityCounts] = await Promise.all([
+        Promise.all(
+          batches.map((batch) =>
+            fetchColumnsForTableBatch(c, batch, perTableColumnCap)
+          )
+        ),
+        includeQualityCoverage
+          ? fetchQualityCountsForTables(c, tableIds)
+          : Promise.resolve(null),
+      ]);
       const coverage = new Map<
         string,
         { described: number; total: number; sampled: boolean }
@@ -334,6 +403,7 @@ export function defineGovernanceScorecard(
         const tagCount = Array.isArray(t.tagEntities)
           ? (t.tagEntities as unknown[]).length
           : 0;
+        const qualityCount = qualityCounts?.get(id);
         return {
           id,
           name: (t.name as string | null) ?? null,
@@ -354,13 +424,19 @@ export function defineGovernanceScorecard(
                 sampled: cov.sampled,
               }
             : { error: "column fetch returned no data for this table" },
+          ...(qualityCounts
+            ? {
+                qualityCheckCount: qualityCount ?? 0,
+                hasQualityCheck: (qualityCount ?? 0) > 0,
+              }
+            : {}),
         };
       });
 
       return {
         scopedBy: scope.field,
         tableCount: rows.length,
-        aggregate: computeAggregate(rows, weighting),
+        aggregate: computeAggregate(rows, weighting, includeQualityCoverage),
         tables: rows,
       };
     }, client),

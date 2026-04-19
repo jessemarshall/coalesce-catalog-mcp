@@ -3,6 +3,7 @@ import { defineGovernanceScorecard } from "../../src/workflows/governance-scorec
 import {
   GET_TABLES_DETAIL_BATCH,
   GET_COLUMNS_SUMMARY,
+  GET_DATA_QUALITIES,
 } from "../../src/catalog/operations.js";
 import { makeMockClient } from "../helpers/mock-client.js";
 
@@ -33,6 +34,7 @@ interface RouterOpts {
   tablesByScope: (scope: { ids?: string[]; schemaId?: string; databaseId?: string }) => MockTable[];
   columnsByTableIds: Map<string, MockColumn[]>;
   totalTablesOverride?: number;
+  qualityCountByTableId?: Map<string, number>;
 }
 
 function makeRouter(opts: RouterOpts) {
@@ -47,6 +49,14 @@ function makeRouter(opts: RouterOpts) {
           page: 0,
           data,
         },
+      };
+    }
+    if (document === GET_DATA_QUALITIES) {
+      const vars = variables as { scope?: { tableId?: string } };
+      const id = vars.scope?.tableId ?? "";
+      const total = opts.qualityCountByTableId?.get(id) ?? 0;
+      return {
+        getDataQualities: { totalCount: total, nbPerPage: 1, page: 0, data: [] },
       };
     }
     if (document === GET_COLUMNS_SUMMARY) {
@@ -390,6 +400,94 @@ describe("catalog_governance_scorecard — empty scope", () => {
       ownedPct: 0,
       describedPct: 0,
       governanceScore: 0,
+      axes: ["owned", "described", "tagged", "columnDoc"],
     });
+  });
+});
+
+describe("catalog_governance_scorecard — quality-coverage axis (opt-in)", () => {
+  it("by default omits qualityCheckCount per row and 'checked' from the axes list", async () => {
+    const tables: MockTable[] = [
+      {
+        id: "t-1",
+        name: "T1",
+        popularity: 0.5,
+        description: "x",
+        ownerEntities: [{ id: "o", userId: "u" }],
+      },
+    ];
+    const client = makeRouter({
+      tablesByScope: () => tables,
+      columnsByTableIds: new Map([["t-1", makeColumns("t-1", 2, 2)]]),
+      qualityCountByTableId: new Map([["t-1", 5]]),
+    });
+    const tool = defineGovernanceScorecard(client);
+    const res = await tool.handler({ schemaId: "sch" });
+    const out = parseResult(res);
+    const row = (out.tables as Array<Record<string, unknown>>)[0];
+    expect(row.qualityCheckCount).toBeUndefined();
+    expect(row.hasQualityCheck).toBeUndefined();
+    const agg = out.aggregate as Record<string, unknown>;
+    expect(agg.axes).toEqual(["owned", "described", "tagged", "columnDoc"]);
+    expect(agg.checkedPct).toBeUndefined();
+  });
+
+  it("with includeQualityCoverage=true populates per-row counts and adds checkedPct + axis", async () => {
+    const tables: MockTable[] = [
+      {
+        id: "t-checked",
+        name: "T_CHECKED",
+        popularity: 1.0,
+        description: "x",
+        ownerEntities: [{ id: "o", userId: "u" }],
+        tagEntities: [{ id: "te", tag: { label: "T" } }],
+      },
+      {
+        id: "t-unchecked",
+        name: "T_UNCHECKED",
+        popularity: 1.0,
+        description: "x",
+        ownerEntities: [{ id: "o", userId: "u" }],
+        tagEntities: [{ id: "te", tag: { label: "T" } }],
+      },
+    ];
+    const client = makeRouter({
+      tablesByScope: () => tables,
+      columnsByTableIds: new Map([
+        ["t-checked", makeColumns("t-checked", 4, 4)],
+        ["t-unchecked", makeColumns("t-unchecked", 4, 4)],
+      ]),
+      qualityCountByTableId: new Map([
+        ["t-checked", 7],
+        ["t-unchecked", 0],
+      ]),
+    });
+    const tool = defineGovernanceScorecard(client);
+    const res = await tool.handler({
+      schemaId: "sch",
+      includeQualityCoverage: true,
+    });
+    const out = parseResult(res);
+
+    const rows = out.tables as Array<Record<string, unknown>>;
+    const checked = rows.find((r) => r.id === "t-checked")!;
+    const unchecked = rows.find((r) => r.id === "t-unchecked")!;
+    expect(checked.qualityCheckCount).toBe(7);
+    expect(checked.hasQualityCheck).toBe(true);
+    expect(unchecked.qualityCheckCount).toBe(0);
+    expect(unchecked.hasQualityCheck).toBe(false);
+
+    const agg = out.aggregate as Record<string, unknown>;
+    expect(agg.axes).toEqual([
+      "owned",
+      "described",
+      "tagged",
+      "columnDoc",
+      "checked",
+    ]);
+    // 1/2 checked under equal weights of popularity 1.0 each.
+    expect(agg.checkedPct).toBe(50);
+    // Score now mean of 5 axes: (100 + 100 + 100 + 100 + 50) / 5 = 90.
+    expect(agg.governanceScore).toBe(90);
   });
 });
