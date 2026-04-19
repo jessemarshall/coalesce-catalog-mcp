@@ -53,6 +53,6 @@ describe("createClient", () => {
     const client = createClient(dummyConfig);
     expect(client.endpoint).toBe(dummyConfig.endpoint);
     expect(client.region).toBe("eu");
-    expect(typeof client.query).toBe("function");
+    expect(typeof client.execute).toBe("function");
   });
 });

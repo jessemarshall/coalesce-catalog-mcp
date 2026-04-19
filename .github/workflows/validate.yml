@@ -44,3 +44,30 @@ jobs:
 
       - name: Pack smoke test
         run: npm pack --dry-run
+
+      # Codegen drift: regenerate src/generated/ from the live introspection
+      # and fail if it differs from what's checked in. Catches the case where
+      # the upstream Castor schema shifted (new field, removed enum, renamed
+      # input) but our generated types — and any handler that depends on them
+      # — silently went stale. On main the secret must be present (its
+      # absence indicates a misconfigured environment, not a fork PR).
+      - name: Check generated types are in sync
+        env:
+          COALESCE_CATALOG_API_KEY: ${{ secrets.COALESCE_CATALOG_API_KEY }}
+          COALESCE_CATALOG_REGION: ${{ vars.COALESCE_CATALOG_REGION || 'eu' }}
+          IS_MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: |
+          if [ -z "$COALESCE_CATALOG_API_KEY" ]; then
+            if [ "$IS_MAIN_PUSH" = "true" ]; then
+              echo "::error ::COALESCE_CATALOG_API_KEY missing on main push — drift check cannot run. Restore the repo secret."
+              exit 1
+            fi
+            echo "::warning ::COALESCE_CATALOG_API_KEY not set (likely fork PR) — skipping codegen drift check."
+            exit 0
+          fi
+          npm run codegen
+          if ! git diff --exit-code src/generated/; then
+            echo "::error ::src/generated/ is out of date relative to the live Catalog schema."
+            echo "::error ::Run \`npm run codegen\` locally and commit the result."
+            exit 1
+          fi

@@ -13,6 +13,8 @@ import { defineAiTools } from "./mcp/ai.js";
 import { defineFindAssetByPath } from "./workflows/find-asset-by-path.js";
 import { defineSummarizeAsset } from "./workflows/summarize-asset.js";
 import { defineTraceMissingLineage } from "./workflows/trace-missing-lineage.js";
+import { defineAssessImpact } from "./workflows/assess-impact.js";
+import { defineGovernanceScorecard } from "./workflows/governance-scorecard.js";
 import { registerCatalogResources } from "./resources/index.js";
 import { registerCatalogPrompts } from "./prompts/index.js";
 
@@ -38,6 +40,22 @@ WORKFLOW SEAM
 - A Coalesce node materialises a warehouse table → that table appears in the
   Catalog. When a user needs end-to-end context (node definition + downstream
   dashboards), call both servers and stitch results.
+
+COMPOSED WORKFLOW TOOLS — prefer these over chaining 4-6 primitives:
+- catalog_find_asset_by_path — resolve "DB.SCHEMA.TABLE[.COLUMN]" to a UUID
+  before any catalog_get_* call.
+- catalog_summarize_asset — full cross-domain context (identity + ownership +
+  tags + lineage + columns + quality) for one asset in one call.
+- catalog_assess_impact — deprecation blast-radius report. Walks downstream
+  lineage (depth 1-3, refuses rather than truncating on wide graphs), enriches
+  every reached asset with ownership, and returns a 0-100 severity score with
+  per-component rationale. Use before any deprecate/archive/restructure decision.
+- catalog_governance_scorecard — coverage matrix per database/schema/table list:
+  per-table flags for ownership / description / column-doc % / tag count, with a
+  popularity-weighted aggregate roll-up. Use to drive Health dashboards or
+  governance-rollout playbooks.
+- catalog_trace_missing_lineage — diagnose where a table's lineage coverage is
+  thin or absent; returns severity-tagged findings with recommendations.
 
 TOOLING NOTES
 - All list tools paginate server-side; responses include \`pagination.hasMore\`.
@@ -76,6 +94,8 @@ export function createCoalesceCatalogMcpServer(
     defineFindAssetByPath(client),
     defineSummarizeAsset(client),
     defineTraceMissingLineage(client),
+    defineAssessImpact(client),
+    defineGovernanceScorecard(client),
   ];
 
   for (const def of definitions) {

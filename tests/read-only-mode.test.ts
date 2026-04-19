@@ -82,17 +82,17 @@ async function listTools(env: Record<string, string>): Promise<string[]> {
 }
 
 describe("COALESCE_CATALOG_READ_ONLY", () => {
-  it("normal mode registers 52 tools", async () => {
+  it("normal mode registers 54 tools", async () => {
     const names = await listTools({ COALESCE_CATALOG_API_KEY: "dummy" });
-    expect(names).toHaveLength(52);
+    expect(names).toHaveLength(54);
   }, 10000);
 
-  it("read-only mode registers only 29 tools (all reads)", async () => {
+  it("read-only mode registers only 31 tools (all reads)", async () => {
     const names = await listTools({
       COALESCE_CATALOG_API_KEY: "dummy",
       COALESCE_CATALOG_READ_ONLY: "true",
     });
-    expect(names).toHaveLength(29);
+    expect(names).toHaveLength(31);
     // No write/destructive tool names leak through.
     // Note: `add` is excluded from the forbidden list because the schema
     // exposes `add_team_users` as a write, but we also have read tools

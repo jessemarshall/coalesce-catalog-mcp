@@ -135,6 +135,27 @@ export const GET_TABLE_DETAIL = /* GraphQL */ `
   }
 `;
 
+// Batch variant of TABLE_DETAIL — same fieldset, but server-side paginated so
+// callers can fetch many tables' descriptions/owners/tags in one call. Used
+// by the governance scorecard; the per-row TABLE_DETAIL above stays scoped to
+// a single id for direct asset-lookup tools.
+export const GET_TABLES_DETAIL_BATCH = /* GraphQL */ `
+  query CatalogGetTablesDetailBatch(
+    $scope: GetTablesScope
+    $sorting: [TableSorting!]
+    $pagination: Pagination
+  ) {
+    getTables(scope: $scope, sorting: $sorting, pagination: $pagination) {
+      totalCount
+      nbPerPage
+      page
+      data {
+        ${TABLE_DETAIL_FIELDS}
+      }
+    }
+  }
+`;
+
 // ── AI: semantic query search + assistant ───────────────────────────────
 
 export const SEARCH_QUERIES = /* GraphQL */ `
@@ -687,6 +708,28 @@ export const GET_DASHBOARDS_SUMMARY = /* GraphQL */ `
 export const GET_DASHBOARD_DETAIL = /* GraphQL */ `
   query CatalogGetDashboardDetail($ids: [String!]!) {
     getDashboards(scope: { ids: $ids }, pagination: { nbPerPage: 1, page: 0 }) {
+      data {
+        ${DASHBOARD_DETAIL_FIELDS}
+      }
+    }
+  }
+`;
+
+// Batch variant of DASHBOARD_DETAIL — same fieldset, server-side paginated so
+// callers can fetch many dashboards' descriptions/owners/tags in one call.
+// Used by the impact assessor for downstream-asset ownership enrichment;
+// GET_DASHBOARD_DETAIL above stays scoped to a single id for the per-asset
+// lookup tool.
+export const GET_DASHBOARDS_DETAIL_BATCH = /* GraphQL */ `
+  query CatalogGetDashboardsDetailBatch(
+    $scope: GetDashboardsScope
+    $sorting: [DashboardSorting!]
+    $pagination: Pagination
+  ) {
+    getDashboards(scope: $scope, sorting: $sorting, pagination: $pagination) {
+      totalCount
+      nbPerPage
+      page
       data {
         ${DASHBOARD_DETAIL_FIELDS}
       }

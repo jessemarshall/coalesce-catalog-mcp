@@ -265,7 +265,7 @@ export function defineColumnTools(
           ),
           pagination: pagination as Pagination,
         };
-        const data = await c.query<{ getColumns: GetColumnsOutput }>(
+        const data = await c.execute<{ getColumns: GetColumnsOutput }>(
           GET_COLUMNS_SUMMARY,
           variables
         );
@@ -287,7 +287,7 @@ export function defineColumnTools(
       },
       handler: withErrorHandling(async (args, c) => {
         const id = args.id as string;
-        const data = await c.query<{ getColumns: { data: unknown[] } }>(
+        const data = await c.execute<{ getColumns: { data: unknown[] } }>(
           GET_COLUMN_DETAIL,
           { ids: [id] }
         );
@@ -316,7 +316,7 @@ export function defineColumnTools(
           ),
           pagination: pagination as Pagination,
         };
-        const data = await c.query<{ getColumnJoins: GetColumnJoinsOutput }>(
+        const data = await c.execute<{ getColumnJoins: GetColumnJoinsOutput }>(
           GET_COLUMN_JOINS,
           variables
         );
@@ -367,7 +367,7 @@ export function defineColumnTools(
       },
       handler: withErrorHandling(async (args, c) => {
         const input = args.data as UpdateColumnsMetadataInput[];
-        const data = await c.query<{ updateColumnsMetadata: Column[] }>(
+        const data = await c.execute<{ updateColumnsMetadata: Column[] }>(
           UPDATE_COLUMNS_METADATA,
           { data: input }
         );

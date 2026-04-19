@@ -70,7 +70,7 @@ describe("MCP protocol round-trip (no live API)", () => {
     expect(resp.result.instructions).toMatch(/coalesce-catalog-mcp/);
   }, 10000);
 
-  it("lists 4 resources", async () => {
+  it("lists 5 resources", async () => {
     const client = launchWithDummyKey();
     client.send({
       jsonrpc: "2.0",
