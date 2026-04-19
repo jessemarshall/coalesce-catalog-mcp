@@ -424,10 +424,10 @@ Six reusable prompt templates kick off common workflows without re-reciting the 
 - A Coalesce Catalog account and a Public-API token (Catalog UI → Settings → API tokens)
 - An MCP-compatible client (see [Quick Start](#quick-start))
 
-**1. Install the package.** The [Quick Start](#quick-start) snippets all use `npx -y coalesce-catalog-mcp@alpha`, which npm fetches on first invocation — no explicit install needed. If you prefer a pinned global install:
+**1. Install the package.** The [Quick Start](#quick-start) snippets all use `npx -y coalesce-catalog-mcp@preview`, which npm fetches on first invocation — no explicit install needed. If you prefer a pinned global install:
 
 ```bash
-npm install -g coalesce-catalog-mcp@alpha
+npm install -g coalesce-catalog-mcp@preview
 ```
 
 **2. Register with your MCP client** via one of the [Quick Start](#quick-start) paths.
