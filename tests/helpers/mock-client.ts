@@ -1,4 +1,4 @@
-import type { CatalogClient } from "../../src/client.js";
+import type { CatalogClient, RawGraphQLResponse } from "../../src/client.js";
 
 export interface MockCall {
   document: string;
@@ -17,15 +17,35 @@ type Responder = (
 
 export function makeMockClient(responder: Responder): MockClient {
   const calls: MockCall[] = [];
+  async function runResponder(document: string, variables: unknown): Promise<unknown> {
+    const callIndex = calls.length;
+    calls.push({ document, variables });
+    return await responder(document, variables, callIndex);
+  }
   return {
     endpoint: "https://example.invalid/public/graphql",
     region: "eu",
     calls,
     async execute<TData>(document: string, variables?: unknown): Promise<TData> {
-      const callIndex = calls.length;
-      calls.push({ document, variables });
-      const result = await responder(document, variables, callIndex);
+      const result = await runResponder(document, variables);
       return result as TData;
+    },
+    // For tests that want to exercise executeRaw, the responder can return
+    // a full { data?, errors?, extensions? } envelope. Otherwise the result
+    // is wrapped as { data: result } so the common execute-path shape still
+    // passes through.
+    async executeRaw<TData>(
+      document: string,
+      variables?: unknown
+    ): Promise<RawGraphQLResponse<TData>> {
+      const result = await runResponder(document, variables);
+      if (result && typeof result === "object") {
+        const obj = result as Record<string, unknown>;
+        if ("data" in obj || "errors" in obj || "extensions" in obj) {
+          return obj as RawGraphQLResponse<TData>;
+        }
+      }
+      return { data: result as TData };
     },
   };
 }
