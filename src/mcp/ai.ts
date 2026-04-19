@@ -105,9 +105,10 @@ const GetAssistantResultInputShape = {
     .number()
     .int()
     .min(0)
+    .max(10)
     .optional()
     .describe(
-      "Seconds to wait server-side before returning if the job is still ACTIVE. Server enforces an upper bound (observed: values like 30 are rejected as BAD_USER_INPUT — try small values like 1-10). If you get a validation error, omit this argument and poll client-side instead."
+      "Seconds to wait server-side before returning if the job is still ACTIVE (0-10). Values above ~10 are rejected by the server as BAD_USER_INPUT. If you need longer waits, omit this argument and poll client-side instead."
     ),
 };
 
@@ -174,7 +175,7 @@ export function defineAiTools(client: CatalogClient): CatalogToolDefinition[] {
         title: "Get AI Assistant Job Result (poll)",
         description:
           "Poll the result of an AI Assistant job started with catalog_ask_assistant. Returns { status: ADDED | ACTIVE | COMPLETED | FAILED | RETRIES_EXHAUSTED, answer, assets[] }.\n\n" +
-          "Pass `delaySeconds` (0-60) to block server-side if the job is still ACTIVE — reduces polling overhead. When status is COMPLETED, `answer` is the final text and `assets` lists referenced catalog entities (tables, dashboards, terms) with internal + external links.",
+          "Pass `delaySeconds` (0-10) to block server-side if the job is still ACTIVE — reduces polling overhead. When status is COMPLETED, `answer` is the final text and `assets` lists referenced catalog entities (tables, dashboards, terms) with internal + external links.",
         inputSchema: GetAssistantResultInputShape,
         annotations: READ_ONLY_ANNOTATIONS,
       },

@@ -303,14 +303,12 @@ export function defineGovernanceTools(
           GET_USERS,
           { pagination: pagination as Pagination }
         );
-        return {
-          pagination: {
-            page: pagination.page,
-            nbPerPage: pagination.nbPerPage,
-            returned: data.getUsers.length,
-          },
-          data: data.getUsers.map(stripUserOwnedAssets),
-        };
+        return listEnvelope(
+          pagination.page,
+          pagination.nbPerPage,
+          null,
+          data.getUsers.map(stripUserOwnedAssets)
+        );
       }, client),
     },
 
@@ -330,14 +328,12 @@ export function defineGovernanceTools(
           GET_TEAMS,
           { pagination: pagination as Pagination }
         );
-        return {
-          pagination: {
-            page: pagination.page,
-            nbPerPage: pagination.nbPerPage,
-            returned: data.getTeams.length,
-          },
-          data: data.getTeams.map(stripTeamArrays),
-        };
+        return listEnvelope(
+          pagination.page,
+          pagination.nbPerPage,
+          null,
+          data.getTeams.map(stripTeamArrays)
+        );
       }, client),
     },
 
