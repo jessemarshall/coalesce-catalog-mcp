@@ -10,11 +10,13 @@ import { defineDiscoveryTools } from "./mcp/discovery.js";
 import { defineAnnotationTools } from "./mcp/annotations.js";
 import { defineGovernanceTools } from "./mcp/governance.js";
 import { defineAiTools } from "./mcp/ai.js";
+import { defineIntrospectionTools } from "./mcp/introspection.js";
 import { defineFindAssetByPath } from "./workflows/find-asset-by-path.js";
 import { defineSummarizeAsset } from "./workflows/summarize-asset.js";
 import { defineTraceMissingLineage } from "./workflows/trace-missing-lineage.js";
 import { defineAssessImpact } from "./workflows/assess-impact.js";
 import { defineGovernanceScorecard } from "./workflows/governance-scorecard.js";
+import { defineColumnLineage } from "./workflows/column-lineage.js";
 import { registerCatalogResources } from "./resources/index.js";
 import { registerCatalogPrompts } from "./prompts/index.js";
 
@@ -94,11 +96,13 @@ export function createCoalesceCatalogMcpServer(
     ...defineAnnotationTools(client),
     ...defineGovernanceTools(client),
     ...defineAiTools(client),
+    ...defineIntrospectionTools(client),
     defineFindAssetByPath(client),
     defineSummarizeAsset(client),
     defineTraceMissingLineage(client),
     defineAssessImpact(client),
     defineGovernanceScorecard(client),
+    defineColumnLineage(client),
   ];
 
   type RegisterToolHandler = Parameters<McpServer["registerTool"]>[2];

@@ -315,4 +315,175 @@ describeLive("live API integration (requires COALESCE_CATALOG_API_KEY)", () => {
       expect(row.columnDocCoverage).toBeDefined();
     }
   }, 90000);
+
+  // Smoke test for catalog_describe_type — catches regressions in the
+  // GraphQL type-introspection query's field selection.
+  it("catalog_describe_type returns a flattened type reference for FieldLineage", async () => {
+    const res = await callTool("catalog_describe_type", {
+      typeName: "FieldLineage",
+    });
+    expect(res.isError).not.toBe(true);
+    const obj = JSON.parse(res.content[0].text);
+    expect(obj.type?.name).toBe("FieldLineage");
+    expect(obj.type?.kind).toBe("OBJECT");
+    const fieldNames = (obj.type.fields as Array<{ name: string }>).map((f) => f.name);
+    expect(fieldNames).toEqual(expect.arrayContaining(["parentColumnId", "childColumnId"]));
+  }, 30000);
+
+  // Smoke test for catalog_get_column_lineage — critical regression guard
+  // for the FQN → UUID walk + batched enrichment. Earlier iterations of the
+  // enrichment path tried scope: { ids: [...] } on getSchemas / getDatabases,
+  // which the server rejects (neither scope accepts `ids`). Exercising the
+  // full workflow against a live endpoint makes that class of bug fail here
+  // rather than silently in Sharon's terminal.
+  it("catalog_get_column_lineage walks, resolves FQNs, and returns a structured graph", async () => {
+    const res = await callTool("catalog_get_column_lineage", {
+      columnFQN: COLUMN_PATH,
+      direction: "both",
+    });
+    expect(res.isError).not.toBe(true);
+    const obj = JSON.parse(res.content[0].text);
+
+    // Root resolved + fully named.
+    expect(obj.root?.columnId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    );
+    expect(obj.root.name).toBeTruthy();
+    // FQN may legitimately be null only if the server dropped an ancestor row;
+    // under normal conditions every ancestor resolves cleanly.
+    expect(obj.root.databaseName).toBeTruthy();
+    expect(obj.root.schemaName).toBeTruthy();
+    expect(obj.root.tableName).toBeTruthy();
+
+    // Both sides present since direction: "both".
+    expect(obj.upstream).toBeDefined();
+    expect(obj.downstream).toBeDefined();
+    expect(typeof obj.upstream.nodeCount).toBe("number");
+    expect(typeof obj.downstream.nodeCount).toBe("number");
+    expect(Array.isArray(obj.upstream.nodes)).toBe(true);
+    expect(Array.isArray(obj.downstream.edges)).toBe(true);
+
+    // Reached column nodes must have fully-resolved FQNs. This is the
+    // exact symptom the getSchemas/getDatabases `ids`-scope bug produced:
+    // handler threw mid-enrichment, whole call 4'd out. With the fix in
+    // place, ancestors resolve cleanly through the getTables relation
+    // chain.
+    const allColumnNodes = [
+      ...(obj.upstream.nodes as Array<Record<string, unknown>>),
+      ...(obj.downstream.nodes as Array<Record<string, unknown>>),
+    ].filter((n) => n.assetType === "COLUMN");
+
+    // Guard against a "green test" where the chosen column has no lineage:
+    // the enrichment path wouldn't exercise at all. Pick a column fixture
+    // (via CATALOG_TEST_COLUMN_PATH) that has at least one reachable neighbor.
+    expect(allColumnNodes.length).toBeGreaterThan(0);
+
+    for (const n of allColumnNodes) {
+      expect(n.id).toBeTruthy();
+      expect(n.name).toBeTruthy();
+      // fqn header: databaseName . schemaName . tableName . name
+      expect(n.databaseName).toBeTruthy();
+      expect(n.schemaName).toBeTruthy();
+      expect(n.tableName).toBeTruthy();
+      expect(n.fqn).toMatch(/^.+\..+\..+\..+$/);
+    }
+
+    // Stats.totalColumnsReached must equal the count of non-root COLUMN
+    // nodes in the graph. A mismatch would mean either the walk dropped a
+    // reached column or enrichment silently dropped its entry — both
+    // partial-failure modes the aggregate stats should surface.
+    expect(obj.stats?.totalColumnsReached).toBe(allColumnNodes.length);
+
+    // Every edge endpoint must resolve to a node in the graph (no dangling
+    // edges that point at an unknown id — that would be a BFS correctness
+    // bug, since we both visit and record on the same pass).
+    const nodeIds = new Set<string>([
+      obj.root.columnId as string,
+      ...allColumnNodes.map((n) => n.id as string),
+      ...[
+        ...(obj.upstream.nodes as Array<Record<string, unknown>>),
+        ...(obj.downstream.nodes as Array<Record<string, unknown>>),
+      ]
+        .filter((n) => n.assetType === "DASHBOARD_FIELD")
+        .map((n) => n.id as string),
+    ]);
+    const allEdges = [
+      ...(obj.upstream.edges as Array<Record<string, unknown>>),
+      ...(obj.downstream.edges as Array<Record<string, unknown>>),
+    ];
+    for (const e of allEdges) {
+      expect(nodeIds.has(e.parentId as string)).toBe(true);
+      expect(nodeIds.has(e.childId as string)).toBe(true);
+    }
+  }, 90000);
+
+  // Additional catalog_describe_type coverage: INPUT_OBJECT shape +
+  // notFound-with-suggestions path. The OBJECT case is covered above.
+  it("catalog_describe_type surfaces INPUT_OBJECT input fields for GetFieldLineagesScope", async () => {
+    const res = await callTool("catalog_describe_type", {
+      typeName: "GetFieldLineagesScope",
+    });
+    expect(res.isError).not.toBe(true);
+    const obj = JSON.parse(res.content[0].text);
+    expect(obj.type?.kind).toBe("INPUT_OBJECT");
+    expect(obj.type?.fields).toBeUndefined();
+    const inputNames = (obj.type.inputFields as Array<{ name: string }>).map((f) => f.name);
+    // The scope accepts at least these four filters.
+    expect(inputNames).toEqual(
+      expect.arrayContaining([
+        "parentColumnId",
+        "childColumnId",
+        "parentDashboardFieldId",
+        "childDashboardFieldId",
+      ])
+    );
+  }, 30000);
+
+  it("catalog_describe_type returns notFound with near-match suggestions for a typo", async () => {
+    const res = await callTool("catalog_describe_type", {
+      typeName: "FieldLinage", // intentional typo
+    });
+    expect(res.isError).not.toBe(true);
+    const obj = JSON.parse(res.content[0].text);
+    expect(obj.notFound).toBe(true);
+    expect(obj.typeName).toBe("FieldLinage");
+    expect(Array.isArray(obj.suggestions)).toBe(true);
+    // Levenshtein ≤ 2 should surface the correct type.
+    expect(obj.suggestions).toEqual(expect.arrayContaining(["FieldLineage"]));
+  }, 30000);
+
+  // catalog_run_graphql smoke tests — exercises executeRaw, the mutation
+  // guardrail, and the verbatim-errors contract against the live server.
+  it("catalog_run_graphql executes a query and returns data verbatim", async () => {
+    const res = await callTool("catalog_run_graphql", {
+      query: "query { getSources(pagination: { nbPerPage: 1, page: 0 }) { totalCount data { id name } } }",
+    });
+    expect(res.isError).not.toBe(true);
+    const obj = JSON.parse(res.content[0].text);
+    expect(obj.data?.getSources).toBeDefined();
+    expect(typeof obj.data.getSources.totalCount).toBe("number");
+    expect(Array.isArray(obj.data.getSources.data)).toBe(true);
+    expect(obj.errors).toBeUndefined();
+  }, 30000);
+
+  it("catalog_run_graphql surfaces GraphQL validation errors without re-mapping them", async () => {
+    const res = await callTool("catalog_run_graphql", {
+      query: "query { getLineages { thisFieldDoesNotExist } }",
+    });
+    // withErrorHandling doesn't flip isError here — the envelope contract
+    // is that validation errors come through in `errors[]`, not as tool
+    // errors, so the agent can reason about them.
+    const obj = JSON.parse(res.content[0].text);
+    expect(Array.isArray(obj.errors)).toBe(true);
+    expect(obj.errors[0]?.message).toMatch(/thisFieldDoesNotExist/);
+  }, 30000);
+
+  it("catalog_run_graphql blocks mutations by default and never hits the network", async () => {
+    const res = await callTool("catalog_run_graphql", {
+      query: "mutation { deleteLineages(data: []) }",
+    });
+    expect(res.isError).not.toBe(true);
+    const obj = JSON.parse(res.content[0].text);
+    expect(obj.blocked).toBe("mutation");
+  }, 15000);
 });
