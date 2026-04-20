@@ -292,7 +292,7 @@ export function defineAnnotationTools(
         title: "Attach Tags to Entities",
         description:
           "Attach tags to one or more entities (tables, columns, dashboards, dashboard fields, or terms). Tags are addressed by *label* — if a tag with the given label does not exist, it is created automatically. Each input row binds one tag label to one entity.\n\n" +
-          "Accepts up to 500 rows per call. Requires a READ_WRITE API token. Returns a boolean success flag (the underlying mutation has no per-row result).",
+          "Accepts up to 500 rows per call. Requires a READ_WRITE API token. Returns a boolean success flag and `requestedCount` (echo of the input batch size — the API has no per-row result, so partial failures within the batch are not detectable).",
         inputSchema: {
           data: z
             .array(
@@ -322,7 +322,7 @@ export function defineAnnotationTools(
         const data = await c.execute<{ attachTags: boolean }>(ATTACH_TAGS, {
           data: input satisfies BaseTagEntityInput[],
         });
-        return { success: data.attachTags, attached: input.length };
+        return { success: data.attachTags, requestedCount: input.length };
       }, client),
     },
 
@@ -332,7 +332,7 @@ export function defineAnnotationTools(
         title: "Detach Tags from Entities",
         description:
           "Remove tag bindings from entities. Identifies the binding by (entityType, entityId, label) — the same shape as catalog_attach_tags. Does not delete the tag itself, only the association.\n\n" +
-          "Accepts up to 500 rows per call. Requires a READ_WRITE API token. Returns a boolean success flag.",
+          "Accepts up to 500 rows per call. Requires a READ_WRITE API token. Returns a boolean success flag and `requestedCount` (echo of the input batch size — the API has no per-row result, so partial failures within the batch are not detectable).",
         inputSchema: {
           data: z
             .array(
@@ -363,7 +363,7 @@ export function defineAnnotationTools(
             const data = await c.execute<{ detachTags: boolean }>(DETACH_TAGS, {
               data: input satisfies BaseTagEntityInput[],
             });
-            return { success: data.detachTags, detached: input.length };
+            return { success: data.detachTags, requestedCount: input.length };
           }
         ),
         client

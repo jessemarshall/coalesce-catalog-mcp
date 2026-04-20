@@ -65,7 +65,7 @@ import {
   NullsPrioritySchema,
   SortDirectionSchema,
 } from "../schemas/sorting.js";
-import { listEnvelope, withErrorHandling } from "./tool-helpers.js";
+import { batchResult, listEnvelope, withErrorHandling } from "./tool-helpers.js";
 import { withConfirmation } from "./confirmation.js";
 
 // ── Payload shaping for search_users / search_teams ─────────────────────────
@@ -291,8 +291,8 @@ export function defineGovernanceTools(
       config: {
         title: "List Catalog Users",
         description:
-          "List Catalog users (humans). Returns identity (id, email, firstName, lastName), role, email-validation status, and `ownedAssetCount` — a scalar count of assets this user owns.\n\n" +
-          "For the full list of owned asset UUIDs, call catalog_get_user_owned_assets(userId). The count was substituted for the raw UUID array to keep list responses small on accounts with senior admins who own hundreds of assets — a ~500-asset ADMIN could otherwise inflate a single user row to 20 KB.",
+          "List all Catalog users (humans) in paginated batches. **No name, email, or attribute filtering is available** — the API does not support scoped queries for users. To find a specific user, page through results client-side.\n\n" +
+          "Returns identity (id, email, firstName, lastName), role, email-validation status, and `ownedAssetCount` — a scalar count of assets this user owns. For the full list of owned asset UUIDs, call catalog_get_user_owned_assets(userId).",
         inputSchema: SearchUsersInputShape,
         annotations: READ_ONLY_ANNOTATIONS,
       },
@@ -316,8 +316,8 @@ export function defineGovernanceTools(
       config: {
         title: "List Catalog Teams",
         description:
-          "List Catalog teams (groups). Returns identity (id, name, description, email), Slack routing (slackChannel, slackGroup), `memberCount`, and `ownedAssetCount`.\n\n" +
-          "For the full list of member UUIDs, call catalog_get_team_members(teamId). For the full list of owned asset UUIDs, call catalog_get_team_owned_assets(teamId). The counts were substituted for the raw UUID arrays to keep list responses small — a team of 30 people owning 200 assets would otherwise inflate a single team row.",
+          "List all Catalog teams (groups) in paginated batches. **No name or attribute filtering is available** — the API does not support scoped queries for teams. To find a specific team, page through results client-side.\n\n" +
+          "Returns identity (id, name, description, email), Slack routing (slackChannel, slackGroup), `memberCount`, and `ownedAssetCount`. For the full list of member UUIDs, call catalog_get_team_members(teamId). For the full list of owned asset UUIDs, call catalog_get_team_owned_assets(teamId).",
         inputSchema: SearchTeamsInputShape,
         annotations: READ_ONLY_ANNOTATIONS,
       },
@@ -521,7 +521,7 @@ export function defineGovernanceTools(
           CREATE_EXTERNAL_LINKS,
           { data: input satisfies CreateExternalLinkInput[] }
         );
-        return { created: data.createExternalLinks.length, data: data.createExternalLinks };
+        return batchResult("created", data.createExternalLinks, input.length);
       }, client),
     },
 
@@ -550,7 +550,7 @@ export function defineGovernanceTools(
           UPDATE_EXTERNAL_LINKS,
           { data: input }
         );
-        return { updated: data.updateExternalLinks.length, data: data.updateExternalLinks };
+        return batchResult("updated", data.updateExternalLinks, input.length);
       }, client),
     },
 
@@ -559,7 +559,8 @@ export function defineGovernanceTools(
       config: {
         title: "Delete External Links",
         description:
-          "Remove external links by id. Irreversible. Batches up to 500; requires READ_WRITE token.",
+          "Remove external links by id. Irreversible. Batches up to 500; requires READ_WRITE token.\n\n" +
+          "Returns a boolean success flag and `requestedCount` (echo of the input batch size — the API has no per-row result, so partial failures within the batch are not detectable).",
         inputSchema: {
           data: z
             .array(
@@ -584,7 +585,7 @@ export function defineGovernanceTools(
               DELETE_EXTERNAL_LINKS,
               { data: input }
             );
-            return { success: data.deleteExternalLinks, deleted: input.length };
+            return { success: data.deleteExternalLinks, requestedCount: input.length };
           }
         ),
         client
@@ -647,10 +648,7 @@ export function defineGovernanceTools(
           UPSERT_DATA_QUALITIES,
           { data: input }
         );
-        return {
-          upserted: data.upsertDataQualities.length,
-          data: data.upsertDataQualities,
-        };
+        return batchResult("upserted", data.upsertDataQualities, input.qualityChecks.length);
       }, client),
     },
 
@@ -659,7 +657,8 @@ export function defineGovernanceTools(
       config: {
         title: "Remove Data Quality Checks",
         description:
-          "Remove quality-check rows by (tableId, externalId) composite keys. Irreversible. Accepts up to 500 keys per call; requires READ_WRITE token.",
+          "Remove quality-check rows by (tableId, externalId) composite keys. Irreversible. Accepts up to 500 keys per call; requires READ_WRITE token.\n\n" +
+          "Returns a boolean success flag and `requestedCount` (echo of the input batch size — the API has no per-row result, so partial failures within the batch are not detectable).",
         inputSchema: {
           qualityChecks: z
             .array(
@@ -693,7 +692,7 @@ export function defineGovernanceTools(
             );
             return {
               success: data.removeDataQualities,
-              removed: input.qualityChecks.length,
+              requestedCount: input.qualityChecks.length,
             };
           }
         ),
@@ -733,7 +732,7 @@ export function defineGovernanceTools(
           UPSERT_USER_OWNERS,
           { data: input }
         );
-        return { upserted: data.upsertUserOwners.length, data: data.upsertUserOwners };
+        return batchResult("upserted", data.upsertUserOwners, (args.targetEntities as EntityTarget[]).length);
       }, client),
     },
 
@@ -815,7 +814,7 @@ export function defineGovernanceTools(
           UPSERT_TEAM_OWNERS,
           { data: input }
         );
-        return { upserted: data.upsertTeamOwners.length, data: data.upsertTeamOwners };
+        return batchResult("upserted", data.upsertTeamOwners, (args.targetEntities as EntityTarget[]).length);
       }, client),
     },
 
@@ -912,7 +911,8 @@ export function defineGovernanceTools(
       config: {
         title: "Add Users to Team",
         description:
-          "Add users (by email) to a team. Emails must belong to existing Catalog users. Single-row (one team, many emails). Requires READ_WRITE token.",
+          "Add users (by email) to a team. Emails must belong to existing Catalog users. Single-row (one team, many emails). Requires READ_WRITE token.\n\n" +
+          "Returns a boolean success flag and `requestedCount` (echo of the input batch size — the API has no per-row result, so partial failures within the batch are not detectable).",
         inputSchema: {
           id: z.string().min(1).describe("Catalog UUID of the team."),
           emails: z
@@ -930,7 +930,7 @@ export function defineGovernanceTools(
         const data = await c.execute<{ addTeamUsers: boolean }>(ADD_TEAM_USERS, {
           data: input,
         });
-        return { success: data.addTeamUsers, added: input.emails.length };
+        return { success: data.addTeamUsers, requestedCount: input.emails.length };
       }, client),
     },
 
@@ -939,7 +939,8 @@ export function defineGovernanceTools(
       config: {
         title: "Remove Users from Team",
         description:
-          "Remove users (by email) from a team. Single-row. Requires READ_WRITE token.",
+          "Remove users (by email) from a team. Single-row. Requires READ_WRITE token.\n\n" +
+          "Returns a boolean success flag and `requestedCount` (echo of the input batch size — the API has no per-row result, so partial failures within the batch are not detectable).",
         inputSchema: {
           id: z.string().min(1).describe("Catalog UUID of the team."),
           emails: z
@@ -967,7 +968,7 @@ export function defineGovernanceTools(
             );
             return {
               success: data.removeTeamUsers,
-              removed: input.emails.length,
+              requestedCount: input.emails.length,
             };
           }
         ),
@@ -1022,7 +1023,7 @@ export function defineGovernanceTools(
           UPSERT_PINNED_ASSETS,
           { data: input }
         );
-        return { upserted: data.upsertPinnedAssets.length, data: data.upsertPinnedAssets };
+        return batchResult("upserted", data.upsertPinnedAssets, input.length);
       }, client),
     },
 
@@ -1031,7 +1032,8 @@ export function defineGovernanceTools(
       config: {
         title: "Remove Pinned Asset Links",
         description:
-          "Remove pinned-asset links identified by endpoints. Same shape as upsert. Irreversible.",
+          "Remove pinned-asset links identified by endpoints. Same shape as upsert. Irreversible.\n\n" +
+          "Returns a boolean success flag and `requestedCount` (echo of the input batch size — the API has no per-row result, so partial failures within the batch are not detectable).",
         inputSchema: {
           data: z
             .array(
@@ -1076,7 +1078,7 @@ export function defineGovernanceTools(
               REMOVE_PINNED_ASSETS,
               { data: input }
             );
-            return { success: data.removePinnedAssets, removed: input.length };
+            return { success: data.removePinnedAssets, requestedCount: input.length };
           }
         ),
         client

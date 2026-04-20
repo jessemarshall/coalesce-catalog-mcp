@@ -17,6 +17,10 @@ import type {
   GetQualityChecksOutput,
 } from "../generated/types.js";
 import { withErrorHandling } from "../mcp/tool-helpers.js";
+import {
+  EXTERNALIZE_SECTION_THRESHOLD,
+  externalizeIfLarge,
+} from "../cache/externalize.js";
 
 type AssetKind = "TABLE" | "DASHBOARD";
 
@@ -92,10 +96,38 @@ function tags(row: Record<string, unknown>): unknown[] {
     : [];
 }
 
+/**
+ * If the section's sample array is big enough to matter for context
+ * footprint, write it to the cache and return a `sampleUri` the agent can
+ * fetch via ReadResource. Otherwise inline it as `sample`. Counts and
+ * hasMore stay inline either way so the agent can reason about pagination
+ * without dereferencing the URI.
+ */
+function maybeExternalizeSample<T>(
+  sample: T[],
+  section: string
+): { sample: T[] } | { sampleUri: string; sampleBytes: number } {
+  const externalized = externalizeIfLarge(sample, {
+    toolName: "catalog_summarize_asset",
+    section,
+    threshold: EXTERNALIZE_SECTION_THRESHOLD,
+  });
+  if (Array.isArray(externalized)) return { sample: externalized };
+  return {
+    sampleUri: externalized.resourceUri,
+    sampleBytes: externalized.byteSize,
+  };
+}
+
 function lineageEnvelope(
   out: GetLineagesOutput,
-  limit: number
-): { totalCount: number; returned: number; hasMore: boolean; sample: unknown[] } {
+  limit: number,
+  section: string
+): {
+  totalCount: number;
+  returned: number;
+  hasMore: boolean;
+} & ({ sample: unknown[] } | { sampleUri: string; sampleBytes: number }) {
   return {
     totalCount: out.totalCount,
     returned: out.data.length,
@@ -103,7 +135,7 @@ function lineageEnvelope(
     // "did we fill the page?" — `hasMore: data.length < null` would be false,
     // falsely signalling completeness.
     hasMore: hasMoreFrom(out.data.length, out.totalCount, limit),
-    sample: out.data.slice(0, limit),
+    ...maybeExternalizeSample(out.data.slice(0, limit), section),
   };
 }
 
@@ -127,7 +159,8 @@ export function defineSummarizeAsset(
       title: "Summarize Asset (One-Call Overview)",
       description:
         "Produce a consolidated cross-domain summary for a TABLE or DASHBOARD asset in a single call: core identity + description, ownership (users + teams), tags, upstream + downstream lineage edges (with totalCount so you know whether to paginate), and — for tables — columns and recent quality-check rows.\n\n" +
-        "Issues up to 5 underlying GraphQL queries in parallel for a TABLE (detail + upstream + downstream + columns + quality), or up to 3 for a DASHBOARD (detail + upstream + downstream). Use this to get full context on one asset without chaining multiple tool calls. Limits are per-sub-query; set them to 0 to skip sections entirely.",
+        "Issues up to 5 underlying GraphQL queries in parallel for a TABLE (detail + upstream + downstream + columns + quality), or up to 3 for a DASHBOARD (detail + upstream + downstream). Use this to get full context on one asset without chaining multiple tool calls. Limits are per-sub-query; set them to 0 to skip sections entirely.\n\n" +
+        "SECTION EXTERNALIZATION: Bulk section samples (columns, qualityChecks, lineage.upstream.sample, lineage.downstream.sample) serialize in-line when under ~2 KB. Above that threshold each section returns `sampleUri` (a `catalog://cache/...` URI) instead of `sample`, plus `sampleBytes`. Fetch the URI via ReadResource only when you actually need that section — counts/hasMore stay inline either way. For many-asset governance checks prefer `catalog_search_tables` with `projection: \"detailed\"` over fanning out to this tool.",
       inputSchema: SummarizeAssetInputShape,
       annotations: READ_ONLY_ANNOTATIONS,
     },
@@ -285,12 +318,20 @@ export function defineSummarizeAsset(
           upstream: upstream.error
             ? { error: upstream.error }
             : upstream.value
-              ? lineageEnvelope(upstream.value.getLineages, upstreamLimit)
+              ? lineageEnvelope(
+                  upstream.value.getLineages,
+                  upstreamLimit,
+                  "lineage_upstream"
+                )
               : { skipped: true },
           downstream: downstream.error
             ? { error: downstream.error }
             : downstream.value
-              ? lineageEnvelope(downstream.value.getLineages, downstreamLimit)
+              ? lineageEnvelope(
+                  downstream.value.getLineages,
+                  downstreamLimit,
+                  "lineage_downstream"
+                )
               : { skipped: true },
         },
       };
@@ -307,7 +348,10 @@ export function defineSummarizeAsset(
                   columns.value.getColumns.totalCount,
                   columnsLimit
                 ),
-                sample: columns.value.getColumns.data,
+                ...maybeExternalizeSample(
+                  columns.value.getColumns.data,
+                  "columns"
+                ),
               }
             : { skipped: true };
         summary.qualityChecks = quality.error
@@ -321,7 +365,10 @@ export function defineSummarizeAsset(
                   quality.value.getDataQualities.totalCount,
                   qualityLimit
                 ),
-                sample: quality.value.getDataQualities.data,
+                ...maybeExternalizeSample(
+                  quality.value.getDataQualities.data,
+                  "quality"
+                ),
               }
             : { skipped: true };
       }
