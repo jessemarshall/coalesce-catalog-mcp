@@ -58,6 +58,29 @@ export function withErrorHandling<TArgs extends Record<string, unknown>>(
 }
 
 /**
+ * Build a mutation result for batch operations where the API returns an
+ * array of results. Compares the response count against the input count
+ * and surfaces a `partialFailure` flag when fewer rows are returned than
+ * were submitted — this lets the agent detect silent partial failures that
+ * the raw GraphQL API does not signal.
+ */
+export function batchResult<T>(
+  label: string,
+  data: T[],
+  expectedCount: number
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {
+    [label]: data.length,
+    data,
+  };
+  if (data.length < expectedCount) {
+    result.partialFailure = true;
+    result.expectedCount = expectedCount;
+  }
+  return result;
+}
+
+/**
  * Normalise a list-query GraphQL output into a uniform envelope for MCP
  * responses. Callers provide the raw data array and pagination metadata;
  * the envelope surfaces `hasMore` so the LLM can decide whether to paginate.
@@ -65,6 +88,11 @@ export function withErrorHandling<TArgs extends Record<string, unknown>>(
  * When `totalCount` is `null` (the GraphQL endpoint doesn't return it),
  * `hasMore` is inferred from whether the page is full, and `totalCount`
  * is omitted from the output to avoid misleading the agent.
+ *
+ * Note: when `totalCount` is null and the last page happens to contain
+ * exactly `nbPerPage` items, `hasMore` will be `true` — the agent will
+ * fetch one more (empty) page. This is the correct heuristic when the
+ * server provides no count; the alternative (under-fetching) is worse.
  */
 export function listEnvelope<T>(
   page: number,

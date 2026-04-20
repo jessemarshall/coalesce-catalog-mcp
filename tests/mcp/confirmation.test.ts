@@ -68,7 +68,7 @@ describe("withConfirmation — happy path (accept)", () => {
     );
 
     expect(result.isError).toBeFalsy();
-    expect(parse(result)).toEqual({ success: true, deleted: 1 });
+    expect(parse(result)).toEqual({ success: true, requestedCount: 1 });
     expect(client.calls).toHaveLength(1);
     expect(calls).toHaveLength(1);
     expect(calls[0].request.method).toBe("elicitation/create");
