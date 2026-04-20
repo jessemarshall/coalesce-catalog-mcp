@@ -641,7 +641,8 @@ export function defineLineageTools(
         title: "Delete Asset Lineage Edges",
         description:
           "Delete lineage edges identified by their endpoints. Same shape as upsert: exactly one parent (parentTableId XOR parentDashboardId) and one child (childTableId XOR childDashboardId) per row. Irreversible — the edge is removed from Catalog.\n\n" +
-          "Use to clean up incorrect automatic lineage or retire stale manual edges. Batches up to 500 per call; requires a READ_WRITE API token.",
+          "Use to clean up incorrect automatic lineage or retire stale manual edges. Batches up to 500 per call; requires a READ_WRITE API token.\n\n" +
+          "Returns a boolean success flag and `requestedCount` (echo of the input batch size — the API has no per-row result, so partial failures within the batch are not detectable).",
         inputSchema: {
           data: z
             .array(

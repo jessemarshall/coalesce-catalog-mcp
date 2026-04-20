@@ -559,7 +559,8 @@ export function defineGovernanceTools(
       config: {
         title: "Delete External Links",
         description:
-          "Remove external links by id. Irreversible. Batches up to 500; requires READ_WRITE token.",
+          "Remove external links by id. Irreversible. Batches up to 500; requires READ_WRITE token.\n\n" +
+          "Returns a boolean success flag and `requestedCount` (echo of the input batch size — the API has no per-row result, so partial failures within the batch are not detectable).",
         inputSchema: {
           data: z
             .array(
@@ -656,7 +657,8 @@ export function defineGovernanceTools(
       config: {
         title: "Remove Data Quality Checks",
         description:
-          "Remove quality-check rows by (tableId, externalId) composite keys. Irreversible. Accepts up to 500 keys per call; requires READ_WRITE token.",
+          "Remove quality-check rows by (tableId, externalId) composite keys. Irreversible. Accepts up to 500 keys per call; requires READ_WRITE token.\n\n" +
+          "Returns a boolean success flag and `requestedCount` (echo of the input batch size — the API has no per-row result, so partial failures within the batch are not detectable).",
         inputSchema: {
           qualityChecks: z
             .array(
@@ -909,7 +911,8 @@ export function defineGovernanceTools(
       config: {
         title: "Add Users to Team",
         description:
-          "Add users (by email) to a team. Emails must belong to existing Catalog users. Single-row (one team, many emails). Requires READ_WRITE token.",
+          "Add users (by email) to a team. Emails must belong to existing Catalog users. Single-row (one team, many emails). Requires READ_WRITE token.\n\n" +
+          "Returns a boolean success flag and `requestedCount` (echo of the input batch size — the API has no per-row result, so partial failures within the batch are not detectable).",
         inputSchema: {
           id: z.string().min(1).describe("Catalog UUID of the team."),
           emails: z
@@ -936,7 +939,8 @@ export function defineGovernanceTools(
       config: {
         title: "Remove Users from Team",
         description:
-          "Remove users (by email) from a team. Single-row. Requires READ_WRITE token.",
+          "Remove users (by email) from a team. Single-row. Requires READ_WRITE token.\n\n" +
+          "Returns a boolean success flag and `requestedCount` (echo of the input batch size — the API has no per-row result, so partial failures within the batch are not detectable).",
         inputSchema: {
           id: z.string().min(1).describe("Catalog UUID of the team."),
           emails: z
@@ -1028,7 +1032,8 @@ export function defineGovernanceTools(
       config: {
         title: "Remove Pinned Asset Links",
         description:
-          "Remove pinned-asset links identified by endpoints. Same shape as upsert. Irreversible.",
+          "Remove pinned-asset links identified by endpoints. Same shape as upsert. Irreversible.\n\n" +
+          "Returns a boolean success flag and `requestedCount` (echo of the input batch size — the API has no per-row result, so partial failures within the batch are not detectable).",
         inputSchema: {
           data: z
             .array(
