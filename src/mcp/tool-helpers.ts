@@ -3,9 +3,15 @@ import { CatalogApiError, CatalogGraphQLError } from "../client.js";
 import {
   errorResult,
   textResult,
+  type CatalogToolDefinition,
   type ToolHandlerExtra,
   type ToolResult,
 } from "../catalog/types.js";
+import {
+  EXTERNALIZE_RESPONSE_THRESHOLD,
+  externalizeIfLarge,
+  isExternalizedPointer,
+} from "../cache/externalize.js";
 
 /**
  * Sentinel a wrapper (e.g. withConfirmation) can throw to short-circuit
@@ -94,6 +100,44 @@ export function batchResult<T>(
  * fetch one more (empty) page. This is the correct heuristic when the
  * server provides no count; the alternative (under-fetching) is worse.
  */
+/**
+ * Wrap a tool handler so any non-error response whose serialised text exceeds
+ * the externalization threshold gets written to the session cache and
+ * replaced with a small `{ externalized, resourceUri, ... }` pointer. Error
+ * results and declines pass through unchanged so the model still sees their
+ * full message inline.
+ *
+ * Callers opt out per-tool by setting `neverExternalize: true` on the
+ * CatalogToolDefinition — use sparingly (health checks, single-scalar tools).
+ */
+export function withResponseExternalization(
+  handler: CatalogToolDefinition["handler"],
+  opts: { toolName: string; neverExternalize?: boolean }
+): CatalogToolDefinition["handler"] {
+  if (opts.neverExternalize) return handler;
+  return async (args, extra) => {
+    const result = await handler(args, extra);
+    if (result.isError) return result;
+    const first = result.content[0];
+    if (!first || first.type !== "text") return result;
+    if (Buffer.byteLength(first.text, "utf8") <= EXTERNALIZE_RESPONSE_THRESHOLD) {
+      return result;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(first.text);
+    } catch {
+      return result;
+    }
+    const replaced = externalizeIfLarge(parsed, {
+      toolName: opts.toolName,
+      threshold: EXTERNALIZE_RESPONSE_THRESHOLD,
+    });
+    if (!isExternalizedPointer(replaced)) return result;
+    return textResult(replaced);
+  };
+}
+
 export function listEnvelope<T>(
   page: number,
   nbPerPage: number,

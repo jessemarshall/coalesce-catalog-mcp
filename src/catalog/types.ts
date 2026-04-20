@@ -35,6 +35,12 @@ export interface CatalogToolDefinition {
     args: Record<string, unknown>,
     extra?: ToolHandlerExtra
   ) => Promise<ToolResult>;
+  /**
+   * Opt out of the global >16 KB response-externalization wrapper. Set to
+   * true only for tools whose callers cannot resolve `catalog://cache/` URIs
+   * (e.g. health checks, or tools whose output is a single scalar).
+   */
+  neverExternalize?: boolean;
 }
 
 export interface ToolAnnotations {
