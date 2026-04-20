@@ -36,7 +36,7 @@ import {
   NullsPrioritySchema,
   SortDirectionSchema,
 } from "../schemas/sorting.js";
-import { listEnvelope, withErrorHandling } from "./tool-helpers.js";
+import { batchResult, listEnvelope, withErrorHandling } from "./tool-helpers.js";
 
 // ── Table search ────────────────────────────────────────────────────────────
 
@@ -325,7 +325,7 @@ export function defineTableTools(client: CatalogClient): CatalogToolDefinition[]
         const data = await c.execute<{ updateTables: Table[] }>(UPDATE_TABLES, {
           data: input,
         });
-        return { updated: data.updateTables.length, data: data.updateTables };
+        return batchResult("updated", data.updateTables, input.length);
       }, client),
     },
   ];

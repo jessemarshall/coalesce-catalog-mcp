@@ -44,7 +44,7 @@ import {
   NullsPrioritySchema,
   SortDirectionSchema,
 } from "../schemas/sorting.js";
-import { listEnvelope, withErrorHandling } from "./tool-helpers.js";
+import { batchResult, listEnvelope, withErrorHandling } from "./tool-helpers.js";
 import { withConfirmation } from "./confirmation.js";
 
 // ── Shared lineage enums ────────────────────────────────────────────────────
@@ -631,7 +631,7 @@ export function defineLineageTools(
           UPSERT_LINEAGES,
           { data: input }
         );
-        return { upserted: data.upsertLineages.length, data: data.upsertLineages };
+        return batchResult("upserted", data.upsertLineages, input.length);
       }, client),
     },
 
@@ -680,7 +680,7 @@ export function defineLineageTools(
               DELETE_LINEAGES,
               { data: input }
             );
-            return { success: data.deleteLineages, deleted: input.length };
+            return { success: data.deleteLineages, requestedCount: input.length };
           }
         ),
         client
