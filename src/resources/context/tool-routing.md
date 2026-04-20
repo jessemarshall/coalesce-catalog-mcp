@@ -25,6 +25,8 @@ Bulk sections (columns, qualityChecks, lineage samples) over ~2 KB come back as 
 
 → `catalog_search_dashboards({ ...scope, projection: "detailed" })` — same pattern for dashboards.
 
+→ `catalog_search_terms({ ...scope, projection: "detailed" })` — same pattern for glossary terms. `detailed` adds `ownerEntities`, `teamOwnerEntities`, and `tagEntities` — use it when grading term health (missing owner, orphaned, untagged) in one paginated call.
+
 Responses over 16 KB auto-externalize to a `catalog://cache/` resource URI, so a 500-row detailed page stays context-safe. Fetch the URI only when you actually need the rows.
 
 **When to reach for `catalog_summarize_asset` instead:** you need lineage edges, column-level detail, or recent quality-check rows for a single asset. For flat list-shaped questions ("who owns every table in SCHEMA X?", "which dashboards in folder Y are unverified?", "show me the description coverage for database Z"), the search tools with `projection: "detailed"` are the right call.
@@ -86,10 +88,25 @@ ORDER_TOTAL  (on FCT_ORDERS)
 - Owners: part of `catalog_summarize_asset` output, or `catalog_get_table` / `catalog_get_dashboard` detail.
 - Runbooks / external URLs: surfaced as `externalLinks` on the detail endpoints.
 
+## "What does user X own?" / "Who's on team Y?"
+
+The public API exposes no user-by-email or team-by-name endpoint — every lookup begins with a client-side page-scan through `getUsers` / `getTeams`. Shape the scan to match what you already have:
+
+- **You only have an email (or team name)** → `catalog_search_users({ projection: "detailed" })` (or `catalog_search_teams({ projection: "detailed" })`). Page-scans once, inlines `ownedAssetIds` (+ `memberIds` for teams) on every row, match client-side. One pass, no follow-up call.
+- **You already have a `userId` / `teamId`** (e.g. surfaced by another tool) → `catalog_get_user_owned_assets` / `catalog_get_team_members` / `catalog_get_team_owned_assets`. These anchor on the UUID and page the asset/member list — useful when the list is too large to return inline.
+
+Default `projection: "summary"` keeps rows compact (counts only, no UUID arrays); reach for `detailed` only when you need the IDs. Detailed responses over 16 KB auto-externalize to a `catalog://cache/` resource URI.
+
 ## "Grade this asset" (quality / documentation)
 
 - Quality test results: `catalog_search_quality_checks` (scope by `tableId`).
 - Documentation coverage: `catalog_search_columns` with `isDocumented: false` + `tableId` or `schemaId`.
+
+## "Give me my daily Catalog to-do list" (owner cleanup)
+
+→ `catalog_owner_scorecard({ email })` — per-owner hygiene scorecard. Enumerates every table/dashboard/term the user owns and categorises each by issue: thin description, PII/domain-tag coverage, new-asset window, certification, lineage gaps (isolated / upstream-only / downstream-only for tables), and term-specific health (missing owner, orphaned, uncertified).
+
+Returns structured ID lists per category, sorted newest-first by `createdAt DESC`. Complete picture or explicit refusal — no silent truncation. For a rendered walkthrough with remediation prompts, invoke the `catalog-daily-guide` prompt instead of calling the tool directly.
 
 ## AI assistant (async)
 

@@ -111,7 +111,7 @@ describe("MCP protocol round-trip (no live API)", () => {
     );
   }, 10000);
 
-  it("lists 5 prompts", async () => {
+  it("lists 7 prompts", async () => {
     const client = launchWithDummyKey();
     client.send({
       jsonrpc: "2.0",
@@ -139,7 +139,7 @@ describe("MCP protocol round-trip (no live API)", () => {
       result: { prompts: Array<{ name: string }> };
     };
     client.close();
-    expect(resp.result.prompts).toHaveLength(6);
+    expect(resp.result.prompts).toHaveLength(7);
     const names = resp.result.prompts.map((p) => p.name);
     expect(names).toEqual(
       expect.arrayContaining([
@@ -149,6 +149,7 @@ describe("MCP protocol round-trip (no live API)", () => {
         "catalog-investigate-lineage-gaps",
         "catalog-audit-documentation",
         "catalog-governance-rollout",
+        "catalog-daily-guide",
       ])
     );
   }, 10000);
