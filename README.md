@@ -406,6 +406,7 @@ Content lives in [`src/resources/context/`](src/resources/context) — edit the 
 - **`catalog_trace_missing_lineage`** - Lineage coverage diagnostic. See [Lineage](#lineage--asset-and-column-level-edges-diagnostics-writes) above.
 - **`catalog_assess_impact`** - Deprecation blast-radius report for a TABLE or DASHBOARD. Walks downstream lineage (depth 1-3, paginated exhaustively per node), batch-enriches every reached asset with ownership + popularity, and returns a 0-100 severity score with per-component rationale. **Completeness contract:** refuses with an explicit error when the depth-2 graph exceeds 2000 distinct nodes (or 500 at depth 3) — never returns a silently truncated report. Surfaces `distinctOwnerTeamCount` (teams to coordinate with) and `unownedCount` (orphaned downstream).
 - **`catalog_governance_scorecard`** - Coverage matrix per database, schema, or explicit `tableIds` list. Per-table flags for ownership / description / column-doc % / tag count, plus an optional 5th axis (`includeQualityCoverage: true` adds quality-check coverage). Aggregate `governanceScore` is popularity-weighted by default (matching Health-dashboard semantics); pass `weighting: 'equal'` for one-table-one-vote audits. Refuses scopes >500 tables.
+- **`catalog_owner_scorecard`** - Per-owner cleanup scorecard. Given an email, enumerates every owned table/dashboard/term and groups them by hygiene issue: thin description, PII/domain-tag coverage, new-asset window, certification, lineage gaps (isolated / upstream-only / downstream-only), and term-specific health (missing owner, orphaned, uncertified). Owned UUIDs that don't resolve as any of table/dashboard/term (columns, queries, deleted refs) are reconciled in `unclassified_owned_ids`. Complete picture or loud refusal — no silent truncation. Pair with the `catalog-daily-guide` prompt for a rendered walkthrough.
 
 </details>
 
@@ -415,13 +416,14 @@ Content lives in [`src/resources/context/`](src/resources/context) — edit the 
 
 ## Prompts
 
-Six reusable prompt templates kick off common workflows without re-reciting the tool chain. Invoke via `prompts/get` in your MCP client (in Claude Code, type `/` and look for the catalog- prefixed entries).
+Seven reusable prompt templates kick off common workflows without re-reciting the tool chain. Invoke via `prompts/get` in your MCP client (in Claude Code, type `/` and look for the catalog- prefixed entries).
 
 - **`catalog-start-here`** - Orientation: reads `overview` + `tool-routing` context and gives the model the routing defaults it should follow.
 - **`catalog-governance-rollout`** - Kicks off the [governance playbook](#governance-rollout) walkthrough grounded in your account's live state (runs source / database / top-25 table sweeps first, then phase-by-phase recommendations).
 - **`catalog-asset-summary`** - Given a path or UUID, run `find_asset_by_path` + `summarize_asset` and present the result.
 - **`catalog-find-consumers`** - Enumerate everything downstream of a table: child tables, dashboards, and SQL queries that read it.
 - **`catalog-investigate-lineage-gaps`** - Run `trace_missing_lineage` and walk each finding with a proposed remediation (upsert_lineages call) — asks for approval before executing.
+- **`catalog-daily-guide`** - Given a user email, call `catalog_owner_scorecard` and render a prioritised "Today's Agenda" markdown report across the owner's tables, dashboards, and terms. Walks remediation actions with explicit approval before any mutation.
 - **`catalog-audit-documentation`** - Undocumented-column / undocumented-table report across a scope (database, schema, or table).
 
 ---
@@ -442,7 +444,7 @@ npm install -g coalesce-catalog-mcp@preview
 
 **2. Register with your MCP client** via one of the [Quick Start](#quick-start) paths.
 
-**3. Restart the client** and try the `/catalog-start-here` prompt (or whatever the slash-command UX is in your client). The agent should list the 4 context resources and 57 tools. If you get an auth error, double-check `COALESCE_CATALOG_API_KEY` has the right scope — READ tokens work on every query tool but mutations require READ_WRITE.
+**3. Restart the client** and try the `/catalog-start-here` prompt (or whatever the slash-command UX is in your client). The agent should list the 4 context resources and 58 tools. If you get an auth error, double-check `COALESCE_CATALOG_API_KEY` has the right scope — READ tokens work on every query tool but mutations require READ_WRITE.
 
 ### Credentials
 
@@ -452,7 +454,7 @@ npm install -g coalesce-catalog-mcp@preview
 | `COALESCE_CATALOG_API_KEY` | Public-API token from the Catalog UI (Settings → API tokens). **Required.** READ tokens work on every query tool; mutations require a READ_WRITE token. | — |
 | `COALESCE_CATALOG_REGION` | Catalog region: `eu` or `us`. Selects the default base URL. | `eu` |
 | `COALESCE_CATALOG_API_URL` | Full base URL override. The path `/public/graphql` is appended automatically. | region-derived |
-| `COALESCE_CATALOG_READ_ONLY` | When `true`, every mutation tool is filtered out at server registration time (57 tools → 34). | `false` |
+| `COALESCE_CATALOG_READ_ONLY` | When `true`, every mutation tool is filtered out at server registration time (58 tools → 35). | `false` |
 <!-- ENV_METADATA_CORE_TABLE_END -->
 
 **Region base URLs:**
@@ -467,7 +469,7 @@ npm install -g coalesce-catalog-mcp@preview
 Two layers keep destructive operations from happening by accident.
 
 - **Tool annotations.** Every tool carries MCP `readOnlyHint` / `destructiveHint` / `idempotentHint`. The ✍️ and ⚠️ markers in [Tools](#tools) track `readOnlyHint: false` and `destructiveHint: true` respectively.
-- **`COALESCE_CATALOG_READ_ONLY=true`** hides all 23 mutation tools at server registration time. Use it for audits, agent sandboxes, or pairing with a prod token. When set, the server registers 34 tools instead of 57.
+- **`COALESCE_CATALOG_READ_ONLY=true`** hides all 23 mutation tools at server registration time. Use it for audits, agent sandboxes, or pairing with a prod token. When set, the server registers 35 tools instead of 58.
 
 Mutation tools additionally require a READ_WRITE API token on the server side — a READ token returns `AuthorizationError` at call time regardless of client config.
 

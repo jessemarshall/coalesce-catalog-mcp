@@ -16,6 +16,7 @@ import { defineSummarizeAsset } from "./workflows/summarize-asset.js";
 import { defineTraceMissingLineage } from "./workflows/trace-missing-lineage.js";
 import { defineAssessImpact } from "./workflows/assess-impact.js";
 import { defineGovernanceScorecard } from "./workflows/governance-scorecard.js";
+import { defineOwnerScorecard } from "./workflows/owner-scorecard.js";
 import { defineColumnLineage } from "./workflows/column-lineage.js";
 import { registerCatalogResources } from "./resources/index.js";
 import { registerCatalogPrompts } from "./prompts/index.js";
@@ -58,6 +59,10 @@ COMPOSED WORKFLOW TOOLS — prefer these over chaining 4-6 primitives:
   per-table flags for ownership / description / column-doc % / tag count, with a
   popularity-weighted aggregate roll-up. Use to drive Health dashboards or
   governance-rollout playbooks.
+- catalog_owner_scorecard — per-owner cleanup scorecard: given an email,
+  enumerates every owned table/dashboard/term and groups them by hygiene issue
+  (thin description, PII, uncertified, lineage gaps, term orphans, etc.). Pair
+  with the catalog-daily-guide prompt for a rendered walkthrough.
 - catalog_trace_missing_lineage — diagnose where a table's lineage coverage is
   thin or absent; returns severity-tagged findings with recommendations.
 
@@ -104,6 +109,7 @@ export function createCoalesceCatalogMcpServer(
     defineTraceMissingLineage(client),
     defineAssessImpact(client),
     defineGovernanceScorecard(client),
+    defineOwnerScorecard(client),
     defineColumnLineage(client),
   ];
 
