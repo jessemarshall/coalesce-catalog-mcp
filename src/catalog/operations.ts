@@ -4,11 +4,14 @@
  * the source type. Sub-selections are shallow by default; add more fields
  * only when a composite workflow genuinely needs them.
  *
- * TABLE fields:
- * - Summary set (used by list queries): identity, type, description, freshness,
- *   popularity signals, deprecation/verification state.
- * - Detail set (used by get-one queries): summary + descriptive text sources,
- *   ownership, tags, external links, schema/database context.
+ * TABLE / DASHBOARD / TERM fields use the same summary/detail split:
+ * - Summary set (used by list queries): identity, description, verification/
+ *   deprecation state, plus type-specific fields (tables: freshness + popularity;
+ *   dashboards: source routing; terms: hierarchy + linkedTag).
+ * - Detail set (used by get-one and audit-batch queries): summary + ownership
+ *   (ownerEntities + teamOwnerEntities), attached tags (tagEntities), and
+ *   type-specific extras (tables: descriptions + schema chain + external links;
+ *   terms: bare ownership/tags — no extras).
  */
 
 const TABLE_SUMMARY_FIELDS = /* GraphQL */ `
@@ -504,8 +507,66 @@ export const GET_TAGS = /* GraphQL */ `
   }
 `;
 
-export const GET_TERMS = /* GraphQL */ `
-  query CatalogGetTerms(
+const TERM_SUMMARY_FIELDS = /* GraphQL */ `
+  id
+  name
+  description
+  externalId
+  icon
+  parentTermId
+  depthLevel
+  isVerified
+  isDeprecated
+  isDescriptionGenerated
+  slug
+  createdAt
+  updatedAt
+  lastEditedAt
+  deletedAt
+  deprecatedAt
+  linkedTag {
+    id
+    label
+    color
+  }
+`;
+
+// Detail set adds ownership (users + teams) and attached tags — the fields
+// the catalog_owner_scorecard workflow needs to grade term health (missing
+// owner, no attached tags, orphaned). Same shape as TABLE_DETAIL_FIELDS for
+// consistency with ownership hydration elsewhere.
+const TERM_DETAIL_FIELDS = /* GraphQL */ `
+  ${TERM_SUMMARY_FIELDS}
+  ownerEntities {
+    id
+    userId
+    user {
+      id
+      email
+      fullName
+    }
+  }
+  teamOwnerEntities {
+    id
+    teamId
+    team {
+      id
+      name
+      email
+    }
+  }
+  tagEntities {
+    id
+    tag {
+      id
+      label
+      color
+    }
+  }
+`;
+
+export const GET_TERMS_SUMMARY = /* GraphQL */ `
+  query CatalogGetTermsSummary(
     $scope: GetTermsScope
     $sorting: [TermSorting!]
     $pagination: Pagination
@@ -515,27 +576,24 @@ export const GET_TERMS = /* GraphQL */ `
       nbPerPage
       page
       data {
-        id
-        name
-        description
-        externalId
-        icon
-        parentTermId
-        depthLevel
-        isVerified
-        isDeprecated
-        isDescriptionGenerated
-        slug
-        createdAt
-        updatedAt
-        lastEditedAt
-        deletedAt
-        deprecatedAt
-        linkedTag {
-          id
-          label
-          color
-        }
+        ${TERM_SUMMARY_FIELDS}
+      }
+    }
+  }
+`;
+
+export const GET_TERMS_DETAIL_BATCH = /* GraphQL */ `
+  query CatalogGetTermsDetailBatch(
+    $scope: GetTermsScope
+    $sorting: [TermSorting!]
+    $pagination: Pagination
+  ) {
+    getTerms(scope: $scope, sorting: $sorting, pagination: $pagination) {
+      totalCount
+      nbPerPage
+      page
+      data {
+        ${TERM_DETAIL_FIELDS}
       }
     }
   }

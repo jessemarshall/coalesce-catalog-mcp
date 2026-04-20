@@ -8,7 +8,8 @@ import {
 } from "../catalog/types.js";
 import {
   GET_TAGS,
-  GET_TERMS,
+  GET_TERMS_SUMMARY,
+  GET_TERMS_DETAIL_BATCH,
   GET_DATA_PRODUCTS,
   ATTACH_TAGS,
   DETACH_TAGS,
@@ -111,6 +112,12 @@ const SearchTermsInputShape = {
   ),
   sortDirection: SortDirectionSchema.optional(),
   nullsPriority: NullsPrioritySchema.optional(),
+  projection: z
+    .enum(["summary", "detailed"])
+    .optional()
+    .describe(
+      "Field set per row. 'summary' (default) = identity + description + hierarchy + verification flags + linkedTag. 'detailed' adds `ownerEntities`, `teamOwnerEntities`, and `tagEntities` — use this for audit workflows that grade term health (missing owner, orphaned, untagged) in one paginated call. Detailed responses over 16 KB auto-externalize to a catalog://cache/ resource URI."
+    ),
   ...PaginationInputShape,
 };
 
@@ -230,7 +237,7 @@ export function defineAnnotationTools(
         title: "Search Catalog Terms (Glossary)",
         description:
           "List glossary terms — the Catalog's business-language definitions that knit together technical assets (tables, columns, dashboards) with shared vocabulary. Terms form a hierarchy via parentTermId + depthLevel and can be linked 1:1 with a tag.\n\n" +
-          "Returns name, description, hierarchy position, verification/deprecation flags, and linkedTag metadata. Use catalog_search_tags with the linkedTagId to find entities tagged with a given term's concept.",
+          "Returns a compact summary per match (identity, description, hierarchy, verification, linkedTag) by default. Set `projection: \"detailed\"` to also include `ownerEntities`, `teamOwnerEntities`, and `tagEntities` — use this in ONE paginated call instead of fanning out separate ownership/tag lookups when grading term health. Detailed responses over 16 KB auto-externalize to a catalog://cache/ resource URI.",
         inputSchema: SearchTermsInputShape,
         annotations: READ_ONLY_ANNOTATIONS,
       },
@@ -245,8 +252,12 @@ export function defineAnnotationTools(
           ),
           pagination: pagination as Pagination,
         };
+        const operation =
+          args.projection === "detailed"
+            ? GET_TERMS_DETAIL_BATCH
+            : GET_TERMS_SUMMARY;
         const data = await c.execute<{ getTerms: GetTermsOutput }>(
-          GET_TERMS,
+          operation,
           variables
         );
         const out = data.getTerms;
