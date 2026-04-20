@@ -6,6 +6,7 @@ import {
 } from "../catalog/types.js";
 import {
   GET_DASHBOARDS_SUMMARY,
+  GET_DASHBOARDS_DETAIL_BATCH,
   GET_DASHBOARD_DETAIL,
 } from "../catalog/operations.js";
 import type {
@@ -60,6 +61,12 @@ const SearchDashboardsInputShape = {
   ),
   sortDirection: SortDirectionSchema.optional(),
   nullsPriority: NullsPrioritySchema.optional(),
+  projection: z
+    .enum(["summary", "detailed"])
+    .optional()
+    .describe(
+      "Field set per row. 'summary' (default) = compact identity + freshness + popularity, same as before. 'detailed' = adds ownership (users/teams), tags, descriptions, folder context — use this in ONE paginated call instead of fan-out to catalog_summarize_asset. Detailed responses over 16 KB are externalized to catalog://cache/ automatically."
+    ),
   ...PaginationInputShape,
 };
 
@@ -96,8 +103,8 @@ export function defineDashboardTools(
       config: {
         title: "Search Catalog Dashboards",
         description:
-          "Find BI dashboards (Tableau, Looker, Mode, etc.) indexed in the Coalesce Catalog. Supports substring search on the dashboard name, folder-path scoping, and filtering to a specific source/BI tool. Returns a compact summary per match (id, name, type, url, folder, popularity, verification/deprecation state).\n\n" +
-          "Use for: finding which dashboards exist for a given business area, discovering consumers of a table (combine with catalog_get_lineages childDashboardId), or sweeping for unverified dashboards. Use catalog_get_dashboard for full detail on a single row.",
+          "Find BI dashboards (Tableau, Looker, Mode, etc.) indexed in the Coalesce Catalog. Supports substring search on the dashboard name, folder-path scoping, and filtering to a specific source/BI tool. Returns a compact summary per match by default (id, name, type, url, folder, popularity, verification/deprecation state). Set `projection: \"detailed\"` to include ownership, tags, and descriptions per row in one call.\n\n" +
+          "Use for: finding which dashboards exist for a given business area, discovering consumers of a table (combine with catalog_get_lineages childDashboardId), or sweeping for unverified dashboards. Detailed responses over 16 KB auto-externalize to catalog://cache/.",
         inputSchema: SearchDashboardsInputShape,
         annotations: READ_ONLY_ANNOTATIONS,
       },
@@ -112,8 +119,12 @@ export function defineDashboardTools(
           ),
           pagination: pagination as Pagination,
         };
+        const operation =
+          args.projection === "detailed"
+            ? GET_DASHBOARDS_DETAIL_BATCH
+            : GET_DASHBOARDS_SUMMARY;
         const data = await c.execute<{ getDashboards: GetDashboardsOutput }>(
-          GET_DASHBOARDS_SUMMARY,
+          operation,
           variables
         );
         const out = data.getDashboards;

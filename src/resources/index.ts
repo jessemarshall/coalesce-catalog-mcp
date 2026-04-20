@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { registerCacheResource } from "./cache-resource.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -83,4 +84,5 @@ export function registerCatalogResources(server: McpServer): void {
       })
     );
   }
+  registerCacheResource(server);
 }

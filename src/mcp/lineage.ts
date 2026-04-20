@@ -44,7 +44,7 @@ import {
   NullsPrioritySchema,
   SortDirectionSchema,
 } from "../schemas/sorting.js";
-import { listEnvelope, withErrorHandling } from "./tool-helpers.js";
+import { batchResult, listEnvelope, withErrorHandling } from "./tool-helpers.js";
 import { withConfirmation } from "./confirmation.js";
 
 // ── Shared lineage enums ────────────────────────────────────────────────────
@@ -631,7 +631,7 @@ export function defineLineageTools(
           UPSERT_LINEAGES,
           { data: input }
         );
-        return { upserted: data.upsertLineages.length, data: data.upsertLineages };
+        return batchResult("upserted", data.upsertLineages, input.length);
       }, client),
     },
 
@@ -641,7 +641,8 @@ export function defineLineageTools(
         title: "Delete Asset Lineage Edges",
         description:
           "Delete lineage edges identified by their endpoints. Same shape as upsert: exactly one parent (parentTableId XOR parentDashboardId) and one child (childTableId XOR childDashboardId) per row. Irreversible — the edge is removed from Catalog.\n\n" +
-          "Use to clean up incorrect automatic lineage or retire stale manual edges. Batches up to 500 per call; requires a READ_WRITE API token.",
+          "Use to clean up incorrect automatic lineage or retire stale manual edges. Batches up to 500 per call; requires a READ_WRITE API token.\n\n" +
+          "Returns a boolean success flag and `requestedCount` (echo of the input batch size — the API has no per-row result, so partial failures within the batch are not detectable).",
         inputSchema: {
           data: z
             .array(
@@ -680,7 +681,7 @@ export function defineLineageTools(
               DELETE_LINEAGES,
               { data: input }
             );
-            return { success: data.deleteLineages, deleted: input.length };
+            return { success: data.deleteLineages, requestedCount: input.length };
           }
         ),
         client

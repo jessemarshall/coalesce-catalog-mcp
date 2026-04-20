@@ -7,6 +7,7 @@ import {
 } from "../catalog/types.js";
 import {
   GET_TABLES_SUMMARY,
+  GET_TABLES_DETAIL_BATCH,
   GET_TABLE_DETAIL,
   GET_TABLE_QUERIES,
   UPDATE_TABLES,
@@ -36,7 +37,7 @@ import {
   NullsPrioritySchema,
   SortDirectionSchema,
 } from "../schemas/sorting.js";
-import { listEnvelope, withErrorHandling } from "./tool-helpers.js";
+import { batchResult, listEnvelope, withErrorHandling } from "./tool-helpers.js";
 
 // ── Table search ────────────────────────────────────────────────────────────
 
@@ -89,6 +90,12 @@ const SearchTablesInputShape = {
   ),
   sortDirection: SortDirectionSchema.optional(),
   nullsPriority: NullsPrioritySchema.optional(),
+  projection: z
+    .enum(["summary", "detailed"])
+    .optional()
+    .describe(
+      "Field set per row. 'summary' (default) = compact identity + freshness + popularity, same as before. 'detailed' = adds ownership (users/teams), tags, descriptions, schema chain, transformation source — use this in ONE paginated call instead of fan-out to catalog_summarize_asset across many ids. Detailed responses over 16 KB are externalized to catalog://cache/ automatically."
+    ),
   ...PaginationInputShape,
 };
 
@@ -193,8 +200,8 @@ export function defineTableTools(client: CatalogClient): CatalogToolDefinition[]
       config: {
         title: "Search Catalog Tables",
         description:
-          "Find warehouse/BI tables indexed in the Coalesce Catalog. Supports substring search on name or path, plus scoping by database/schema/warehouse. Returns a compact summary for each match (id, name, description, type, popularity, freshness). Use catalog_get_table for full detail on one row.\n\n" +
-          "Default page size: 100, max: 500. Sorting is optional; omit for API default order.",
+          "Find warehouse/BI tables indexed in the Coalesce Catalog. Supports substring search on name or path, plus scoping by database/schema/warehouse. Returns a compact summary for each match (id, name, description, type, popularity, freshness) by default. Set `projection: \"detailed\"` to include ownership, tags, descriptions, and schema context per row — this replaces fanning out to catalog_summarize_asset across many ids.\n\n" +
+          "Default page size: 100, max: 500. Sorting is optional; omit for API default order. Detailed responses over 16 KB auto-externalize to a catalog://cache/ resource URI.",
         inputSchema: SearchTablesInputShape,
         annotations: READ_ONLY_ANNOTATIONS,
       },
@@ -209,8 +216,12 @@ export function defineTableTools(client: CatalogClient): CatalogToolDefinition[]
           ),
           pagination: pagination as Pagination,
         };
+        const operation =
+          args.projection === "detailed"
+            ? GET_TABLES_DETAIL_BATCH
+            : GET_TABLES_SUMMARY;
         const data = await c.execute<{ getTables: GetTablesOutput }>(
-          GET_TABLES_SUMMARY,
+          operation,
           variables
         );
         const out = data.getTables;
@@ -325,7 +336,7 @@ export function defineTableTools(client: CatalogClient): CatalogToolDefinition[]
         const data = await c.execute<{ updateTables: Table[] }>(UPDATE_TABLES, {
           data: input,
         });
-        return { updated: data.updateTables.length, data: data.updateTables };
+        return batchResult("updated", data.updateTables, input.length);
       }, client),
     },
   ];

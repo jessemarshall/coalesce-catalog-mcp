@@ -19,6 +19,8 @@ import { defineGovernanceScorecard } from "./workflows/governance-scorecard.js";
 import { defineColumnLineage } from "./workflows/column-lineage.js";
 import { registerCatalogResources } from "./resources/index.js";
 import { registerCatalogPrompts } from "./prompts/index.js";
+import { cleanupStaleSessions } from "./cache/store.js";
+import { withResponseExternalization } from "./mcp/tool-helpers.js";
 
 export function isReadOnlyMode(): boolean {
   return process.env[READ_ONLY_ENV_VAR] === "true";
@@ -112,15 +114,20 @@ export function createCoalesceCatalogMcpServer(
     // narrower ToolResult is structurally compatible. Casting through the
     // SDK's exact handler param type (not `any`) keeps future SDK changes
     // surfacing at compile time.
+    const wrapped = withResponseExternalization(def.handler, {
+      toolName: def.name,
+      neverExternalize: def.neverExternalize,
+    });
     server.registerTool(
       def.name,
       def.config,
-      def.handler as unknown as RegisterToolHandler
+      wrapped as unknown as RegisterToolHandler
     );
   }
 
   registerCatalogResources(server);
   registerCatalogPrompts(server);
+  cleanupStaleSessions();
 
   return server;
 }
