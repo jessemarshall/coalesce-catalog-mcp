@@ -1,4 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { defineSummarizeAsset } from "../../src/workflows/summarize-asset.js";
 import {
   GET_TABLE_DETAIL,
@@ -9,6 +12,8 @@ import {
 } from "../../src/catalog/operations.js";
 import { CatalogGraphQLError } from "../../src/client.js";
 import { makeMockClient } from "../helpers/mock-client.js";
+import { resolveCacheUri } from "../../src/cache/paths.js";
+import { readArtifact } from "../../src/cache/store.js";
 
 function parseResult(r: { content: { text: string }[] }): Record<string, unknown> {
   return JSON.parse(r.content[0].text) as Record<string, unknown>;
@@ -301,6 +306,109 @@ describe("catalog_summarize_asset — partial-failure behavior", () => {
     expect(client.calls).toHaveLength(3);
     expect(client.calls.some((c) => c.document === GET_COLUMNS_SUMMARY)).toBe(false);
     expect(client.calls.some((c) => c.document === GET_DATA_QUALITIES)).toBe(false);
+  });
+});
+
+describe("catalog_summarize_asset — section externalization", () => {
+  let dir: string;
+  let originalEnv: string | undefined;
+
+  beforeEach(() => {
+    originalEnv = process.env.COALESCE_CACHE_DIR;
+    dir = mkdtempSync(join(tmpdir(), "catalog-summarize-ext-"));
+    process.env.COALESCE_CACHE_DIR = dir;
+  });
+
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env.COALESCE_CACHE_DIR;
+    else process.env.COALESCE_CACHE_DIR = originalEnv;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("inlines a small columns sample", async () => {
+    const client = makeRouter(
+      {
+        [GET_TABLE_DETAIL]: { getTables: { data: [TABLE_ROW] } },
+        [GET_COLUMNS_SUMMARY]: okColumns(3, [
+          { id: "c-1", name: "ID" },
+          { id: "c-2", name: "TOTAL" },
+        ]),
+        [GET_DATA_QUALITIES]: okQuality(0, []),
+      },
+      { upstream: okLineage(0, []), downstream: okLineage(0, []) }
+    );
+    const tool = defineSummarizeAsset(client);
+    const out = parseResult(
+      await tool.handler({ kind: "TABLE", id: "t-1" })
+    );
+    const columns = out.columns as Record<string, unknown>;
+    expect(columns).toHaveProperty("sample");
+    expect(columns).not.toHaveProperty("sampleUri");
+  });
+
+  it("externalizes a columns sample larger than 2 KB", async () => {
+    const bigColumns = Array.from({ length: 50 }, (_, i) => ({
+      id: `c-${i}`,
+      name: `COLUMN_${i}`,
+      description: "a".repeat(100),
+      type: "VARCHAR",
+      isPii: false,
+    }));
+    const client = makeRouter(
+      {
+        [GET_TABLE_DETAIL]: { getTables: { data: [TABLE_ROW] } },
+        [GET_COLUMNS_SUMMARY]: okColumns(50, bigColumns),
+        [GET_DATA_QUALITIES]: okQuality(0, []),
+      },
+      { upstream: okLineage(0, []), downstream: okLineage(0, []) }
+    );
+    const tool = defineSummarizeAsset(client);
+
+    const out = parseResult(
+      await tool.handler({ kind: "TABLE", id: "t-1" })
+    );
+    const columns = out.columns as Record<string, unknown>;
+    expect(columns).not.toHaveProperty("sample");
+    expect(columns).toHaveProperty("sampleUri");
+    expect(columns).toHaveProperty("sampleBytes");
+    expect(String(columns.sampleUri).startsWith("catalog://cache/")).toBe(true);
+    expect(columns.totalCount).toBe(50);
+    expect(columns.returned).toBe(50);
+
+    const resolved = resolveCacheUri(String(columns.sampleUri));
+    expect(resolved).not.toBeNull();
+    const fetched = JSON.parse(readArtifact(resolved!.absPath));
+    expect(fetched).toEqual(bigColumns);
+  });
+
+  it("externalizes a large upstream-lineage sample independently of downstream", async () => {
+    const bigUpstream = Array.from({ length: 40 }, (_, i) => ({
+      id: `l-up-${i}`,
+      parentTableName: `PARENT_${i}`,
+      parentSchemaName: "s".repeat(80),
+      createdAt: "2025-01-01",
+    }));
+    const client = makeRouter(
+      {
+        [GET_TABLE_DETAIL]: { getTables: { data: [TABLE_ROW] } },
+        [GET_COLUMNS_SUMMARY]: okColumns(0, []),
+        [GET_DATA_QUALITIES]: okQuality(0, []),
+      },
+      {
+        upstream: okLineage(40, bigUpstream),
+        downstream: okLineage(1, [{ id: "d-1" }]),
+      }
+    );
+    const tool = defineSummarizeAsset(client);
+    const out = parseResult(
+      await tool.handler({ kind: "TABLE", id: "t-1", upstreamLimit: 40 })
+    );
+
+    const lineage = out.lineage as Record<string, Record<string, unknown>>;
+    expect(lineage.upstream).toHaveProperty("sampleUri");
+    expect(lineage.upstream).not.toHaveProperty("sample");
+    expect(lineage.downstream).toHaveProperty("sample");
+    expect(lineage.downstream).not.toHaveProperty("sampleUri");
   });
 });
 

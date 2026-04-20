@@ -11,9 +11,23 @@ the phased playbook at [catalog://context/governance-rollout](catalog://context/
 
 → `catalog_find_asset_by_path` — always the first call. Returns the UUID you need for everything else.
 
-## "Tell me about this table/dashboard" (one-shot context)
+## "Tell me about this table/dashboard" (one-shot, ONE asset)
 
-→ `catalog_summarize_asset` — single call returns identity + owners + tags + lineage counts + columns + quality checks.
+→ `catalog_summarize_asset` — single call returns identity + owners + tags + lineage counts + columns + quality checks for **one** asset.
+
+Bulk sections (columns, qualityChecks, lineage samples) over ~2 KB come back as `sampleUri: "catalog://cache/..."` resource URIs with `totalCount` / `returned` / `hasMore` still inline. Only dereference a `sampleUri` (via ReadResource) if that section is actually needed — pagination decisions can be made from the inline counts.
+
+## "Tell me about THESE N tables/dashboards" (governance checks, bulk audits)
+
+**Do NOT fan out to `catalog_summarize_asset` across many ids** — that produces N round trips and N × ~3 KB of context per call. Instead:
+
+→ `catalog_search_tables({ ...scope, projection: "detailed" })` — one paginated call returns ownership, tags, descriptions, and schema context for every match. `projection: "detailed"` is the "many assets, full metadata" shape. Defaults to `"summary"` (identity + freshness + popularity) when omitted.
+
+→ `catalog_search_dashboards({ ...scope, projection: "detailed" })` — same pattern for dashboards.
+
+Responses over 16 KB auto-externalize to a `catalog://cache/` resource URI, so a 500-row detailed page stays context-safe. Fetch the URI only when you actually need the rows.
+
+**When to reach for `catalog_summarize_asset` instead:** you need lineage edges, column-level detail, or recent quality-check rows for a single asset. For flat list-shaped questions ("who owns every table in SCHEMA X?", "which dashboards in folder Y are unverified?", "show me the description coverage for database Z"), the search tools with `projection: "detailed"` are the right call.
 
 ## "Find assets by..."
 

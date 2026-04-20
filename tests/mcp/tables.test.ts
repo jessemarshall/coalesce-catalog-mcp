@@ -3,6 +3,7 @@ import { z } from "zod";
 import { defineTableTools } from "../../src/mcp/tables.js";
 import {
   GET_TABLES_SUMMARY,
+  GET_TABLES_DETAIL_BATCH,
   GET_TABLE_DETAIL,
   GET_TABLE_QUERIES,
   UPDATE_TABLES,
@@ -267,6 +268,38 @@ describe("catalog_search_tables handler", () => {
       pagination: Record<string, unknown>;
     };
     expect(vars.pagination).toMatchObject({ nbPerPage: 50, page: 3 });
+  });
+
+  it("defaults to the summary operation when projection is omitted", async () => {
+    const { client, tools } = makeTools(() => ({
+      getTables: { page: 0, nbPerPage: 100, totalCount: 0, data: [] },
+    }));
+    const tool = find(tools, "catalog_search_tables");
+    await tool.handler({});
+    expect(client.calls[0].document).toBe(GET_TABLES_SUMMARY);
+  });
+
+  it("uses summary operation when projection is 'summary'", async () => {
+    const { client, tools } = makeTools(() => ({
+      getTables: { page: 0, nbPerPage: 100, totalCount: 0, data: [] },
+    }));
+    const tool = find(tools, "catalog_search_tables");
+    await tool.handler({ projection: "summary" });
+    expect(client.calls[0].document).toBe(GET_TABLES_SUMMARY);
+  });
+
+  it("uses detail-batch operation when projection is 'detailed'", async () => {
+    const { client, tools } = makeTools(() => ({
+      getTables: { page: 0, nbPerPage: 100, totalCount: 0, data: [] },
+    }));
+    const tool = find(tools, "catalog_search_tables");
+    await tool.handler({ projection: "detailed" });
+    expect(client.calls[0].document).toBe(GET_TABLES_DETAIL_BATCH);
+  });
+
+  it("rejects invalid projection values at the schema layer", () => {
+    const schema = z.object(find(makeTools().tools, "catalog_search_tables").config.inputSchema);
+    expect(() => schema.parse({ projection: "full" })).toThrow();
   });
 });
 

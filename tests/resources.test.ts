@@ -43,6 +43,13 @@ describe("resource markdown files", () => {
     expect(contents).toContain("catalog_get_lineages");
   });
 
+  it("tool-routing steers agents away from fan-out to the detailed-projection batch call", () => {
+    const contents = readFileSync(join(srcDir, "tool-routing.md"), "utf-8");
+    expect(contents).toContain('projection: "detailed"');
+    expect(contents).toMatch(/do not fan out/i);
+    expect(contents).toContain("catalog://cache/");
+  });
+
   it("ecosystem-boundaries mentions transform and catalog", () => {
     const contents = readFileSync(
       join(srcDir, "ecosystem-boundaries.md"),
