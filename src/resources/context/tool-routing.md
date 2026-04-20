@@ -86,6 +86,15 @@ ORDER_TOTAL  (on FCT_ORDERS)
 - Owners: part of `catalog_summarize_asset` output, or `catalog_get_table` / `catalog_get_dashboard` detail.
 - Runbooks / external URLs: surfaced as `externalLinks` on the detail endpoints.
 
+## "What does user X own?" / "Who's on team Y?"
+
+The public API exposes no user-by-email or team-by-name endpoint — every lookup begins with a client-side page-scan through `getUsers` / `getTeams`. Shape the scan to match what you already have:
+
+- **You only have an email (or team name)** → `catalog_search_users({ projection: "detailed" })` (or `catalog_search_teams({ projection: "detailed" })`). Page-scans once, inlines `ownedAssetIds` (+ `memberIds` for teams) on every row, match client-side. One pass, no follow-up call.
+- **You already have a `userId` / `teamId`** (e.g. surfaced by another tool) → `catalog_get_user_owned_assets` / `catalog_get_team_members` / `catalog_get_team_owned_assets`. These anchor on the UUID and page the asset/member list — useful when the list is too large to return inline.
+
+Default `projection: "summary"` keeps rows compact (counts only, no UUID arrays); reach for `detailed` only when you need the IDs. Detailed responses over 16 KB auto-externalize to a `catalog://cache/` resource URI.
+
 ## "Grade this asset" (quality / documentation)
 
 - Quality test results: `catalog_search_quality_checks` (scope by `tableId`).

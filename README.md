@@ -342,8 +342,8 @@ Content lives in [`src/resources/context/`](src/resources/context) — edit the 
 
 **Read**
 
-- **`catalog_search_users`** - List Catalog users (id, email, role, `ownedAssetIds`).
-- **`catalog_search_teams`** - List teams (members, Slack routing, `ownedAssetIds`).
+- **`catalog_search_users`** - List Catalog users (id, email, role, `ownedAssetCount`). Set `projection: "detailed"` to inline `ownedAssetIds` and resolve email → owned assets in one scan.
+- **`catalog_search_teams`** - List teams (members, Slack routing, `memberCount`, `ownedAssetCount`). Set `projection: "detailed"` to inline `memberIds` + `ownedAssetIds`.
 - **`catalog_search_quality_checks`** - Data-quality test results (dbt, Monte Carlo, Soda, Great Expectations, etc.). Scope by `tableId`.
 - **`catalog_search_pinned_assets`** - Curated "see also" links between catalog entities.
 

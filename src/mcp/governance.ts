@@ -72,29 +72,51 @@ import { withConfirmation } from "./confirmation.js";
 // The public API inlines ownedAssetIds (and memberIds for teams) as
 // unbounded UUID arrays on every user/team record. A single ADMIN user in a
 // mature workspace can return ~500 IDs, inflating list payloads to 20 KB per
-// row. We strip the arrays in list queries and expose them via dedicated
-// paginated lookup tools instead.
+// row. The default `summary` projection strips those arrays and surfaces
+// `ownedAssetCount` (and `memberCount`) instead; `detailed` keeps the arrays
+// inline alongside the count so one page-scan can resolve email → owned
+// assets without a follow-up lookup call. Detailed responses over 16 KB are
+// auto-externalized upstream in tool-helpers.ts.
 
 type TrimmedUser = Omit<GetUsersOutput, "ownedAssetIds"> & {
   ownedAssetCount: number;
 };
+
+type DetailedUser = GetUsersOutput & { ownedAssetCount: number };
 
 type TrimmedTeam = Omit<GetTeamsOutput, "memberIds" | "ownedAssetIds"> & {
   memberCount: number;
   ownedAssetCount: number;
 };
 
-function stripUserOwnedAssets(user: GetUsersOutput): TrimmedUser {
+type DetailedTeam = GetTeamsOutput & {
+  memberCount: number;
+  ownedAssetCount: number;
+};
+
+function summarizeUser(user: GetUsersOutput): TrimmedUser {
   const { ownedAssetIds, ...rest } = user;
   return { ...rest, ownedAssetCount: ownedAssetIds?.length ?? 0 };
 }
 
-function stripTeamArrays(team: GetTeamsOutput): TrimmedTeam {
+function detailUser(user: GetUsersOutput): DetailedUser {
+  return { ...user, ownedAssetCount: user.ownedAssetIds?.length ?? 0 };
+}
+
+function summarizeTeam(team: GetTeamsOutput): TrimmedTeam {
   const { memberIds, ownedAssetIds, ...rest } = team;
   return {
     ...rest,
     memberCount: memberIds?.length ?? 0,
     ownedAssetCount: ownedAssetIds?.length ?? 0,
+  };
+}
+
+function detailTeam(team: GetTeamsOutput): DetailedTeam {
+  return {
+    ...team,
+    memberCount: team.memberIds?.length ?? 0,
+    ownedAssetCount: team.ownedAssetIds?.length ?? 0,
   };
 }
 
@@ -167,12 +189,24 @@ function sliceAssetIds(
 // ── Users ───────────────────────────────────────────────────────────────────
 
 const SearchUsersInputShape = {
+  projection: z
+    .enum(["summary", "detailed"])
+    .optional()
+    .describe(
+      "Field set per row. 'summary' (default) = identity + role + `ownedAssetCount`, same as before. 'detailed' = additionally inlines `ownedAssetIds` (the full array of owned asset UUIDs) alongside the count — use this to resolve email → owned assets in one paginated scan without a follow-up catalog_get_user_owned_assets call. Detailed responses over 16 KB auto-externalize to a catalog://cache/ resource URI."
+    ),
   ...PaginationInputShape,
 };
 
 // ── Teams ───────────────────────────────────────────────────────────────────
 
 const SearchTeamsInputShape = {
+  projection: z
+    .enum(["summary", "detailed"])
+    .optional()
+    .describe(
+      "Field set per row. 'summary' (default) = identity + Slack routing + `memberCount` + `ownedAssetCount`, same as before. 'detailed' = additionally inlines `memberIds` and `ownedAssetIds` (full UUID arrays) alongside the counts — use this to resolve team name → members or owned assets in one paginated scan without a follow-up catalog_get_team_members / catalog_get_team_owned_assets call. Detailed responses over 16 KB auto-externalize to a catalog://cache/ resource URI."
+    ),
   ...PaginationInputShape,
 };
 
@@ -292,21 +326,25 @@ export function defineGovernanceTools(
         title: "List Catalog Users",
         description:
           "List all Catalog users (humans) in paginated batches. **No name, email, or attribute filtering is available** — the API does not support scoped queries for users. To find a specific user, page through results client-side.\n\n" +
-          "Returns identity (id, email, firstName, lastName), role, email-validation status, and `ownedAssetCount` — a scalar count of assets this user owns. For the full list of owned asset UUIDs, call catalog_get_user_owned_assets(userId).",
+          "Returns identity (id, email, firstName, lastName), role, email-validation status, and `ownedAssetCount` (scalar count of assets this user owns) by default. Set `projection: \"detailed\"` to additionally inline `ownedAssetIds` — this lets a single page-scan resolve email → owned assets without a follow-up catalog_get_user_owned_assets call.",
         inputSchema: SearchUsersInputShape,
         annotations: READ_ONLY_ANNOTATIONS,
       },
       handler: withErrorHandling(async (args, c) => {
         const pagination = toGraphQLPagination(args as PaginationInput);
+        const detailed = args.projection === "detailed";
         const data = await c.execute<{ getUsers: GetUsersOutput[] }>(
           GET_USERS,
           { pagination: pagination as Pagination }
         );
+        const rows = detailed
+          ? data.getUsers.map(detailUser)
+          : data.getUsers.map(summarizeUser);
         return listEnvelope(
           pagination.page,
           pagination.nbPerPage,
           null,
-          data.getUsers.map(stripUserOwnedAssets)
+          rows
         );
       }, client),
     },
@@ -317,21 +355,25 @@ export function defineGovernanceTools(
         title: "List Catalog Teams",
         description:
           "List all Catalog teams (groups) in paginated batches. **No name or attribute filtering is available** — the API does not support scoped queries for teams. To find a specific team, page through results client-side.\n\n" +
-          "Returns identity (id, name, description, email), Slack routing (slackChannel, slackGroup), `memberCount`, and `ownedAssetCount`. For the full list of member UUIDs, call catalog_get_team_members(teamId). For the full list of owned asset UUIDs, call catalog_get_team_owned_assets(teamId).",
+          "Returns identity (id, name, description, email), Slack routing (slackChannel, slackGroup), `memberCount`, and `ownedAssetCount` by default. Set `projection: \"detailed\"` to additionally inline `memberIds` and `ownedAssetIds` — this lets a single page-scan resolve team name → members or owned assets without a follow-up catalog_get_team_members / catalog_get_team_owned_assets call.",
         inputSchema: SearchTeamsInputShape,
         annotations: READ_ONLY_ANNOTATIONS,
       },
       handler: withErrorHandling(async (args, c) => {
         const pagination = toGraphQLPagination(args as PaginationInput);
+        const detailed = args.projection === "detailed";
         const data = await c.execute<{ getTeams: GetTeamsOutput[] }>(
           GET_TEAMS,
           { pagination: pagination as Pagination }
         );
+        const rows = detailed
+          ? data.getTeams.map(detailTeam)
+          : data.getTeams.map(summarizeTeam);
         return listEnvelope(
           pagination.page,
           pagination.nbPerPage,
           null,
-          data.getTeams.map(stripTeamArrays)
+          rows
         );
       }, client),
     },
@@ -341,7 +383,8 @@ export function defineGovernanceTools(
       config: {
         title: "Get Paginated Owned Assets For a User",
         description:
-          "Return the paginated list of asset UUIDs owned by a given user. Pair with catalog_search_users (which only exposes `ownedAssetCount`) when you need the full list — e.g. 'list every table Zach owns'.\n\n" +
+          "Return the paginated list of asset UUIDs owned by a given user, anchored by `userId`. Use this when you already have a Catalog user UUID and want the owned-asset list in pages (e.g. drilling into a user surfaced by another tool, or paginating through a user who owns 10k+ assets).\n\n" +
+          "**If you only have an email**, prefer `catalog_search_users({ projection: \"detailed\" })` — it page-scans once and inlines `ownedAssetIds` on the matched row, avoiding the double scan this tool would otherwise perform (once to resolve the user, then again internally for the asset list).\n\n" +
           "Implementation note: the public API has no direct user-by-id endpoint, so this tool iterates `getUsers` pages of 500 until it finds the target. The cap is 10k users (20 pages); beyond that it returns notFound with a hint. The returned IDs are heterogeneous (tables, dashboards, terms) — hydrate via catalog_get_table / catalog_get_dashboard / catalog_search_terms{ids} as needed.",
         inputSchema: {
           userId: z.string().min(1).describe("Catalog UUID of the user."),
@@ -373,7 +416,8 @@ export function defineGovernanceTools(
       config: {
         title: "Get Paginated Members For a Team",
         description:
-          "Return the paginated list of user UUIDs belonging to a team. Pair with catalog_search_teams (which only exposes `memberCount`) when you need the full membership.\n\n" +
+          "Return the paginated list of user UUIDs belonging to a team, anchored by `teamId`. Use this when you already have a Catalog team UUID and want the membership list in pages.\n\n" +
+          "**If you only have a team name**, prefer `catalog_search_teams({ projection: \"detailed\" })` — it page-scans once and inlines `memberIds` on every row, avoiding the double scan this tool performs internally.\n\n" +
           "Same iteration strategy as catalog_get_user_owned_assets — scans up to 10k teams.",
         inputSchema: {
           teamId: z.string().min(1).describe("Catalog UUID of the team."),
@@ -405,7 +449,9 @@ export function defineGovernanceTools(
       config: {
         title: "Get Paginated Owned Assets For a Team",
         description:
-          "Return the paginated list of asset UUIDs owned by a given team. Pair with catalog_search_teams (which only exposes `ownedAssetCount`). Same iteration strategy as catalog_get_user_owned_assets.",
+          "Return the paginated list of asset UUIDs owned by a given team, anchored by `teamId`. Use this when you already have a Catalog team UUID and want the owned-asset list in pages.\n\n" +
+          "**If you only have a team name**, prefer `catalog_search_teams({ projection: \"detailed\" })` — it page-scans once and inlines `ownedAssetIds` on every row, avoiding the double scan this tool performs internally.\n\n" +
+          "Same iteration strategy as catalog_get_user_owned_assets.",
         inputSchema: {
           teamId: z.string().min(1).describe("Catalog UUID of the team."),
           ...PaginationInputShape,
