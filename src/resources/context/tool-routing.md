@@ -25,6 +25,8 @@ Bulk sections (columns, qualityChecks, lineage samples) over ~2 KB come back as 
 
 → `catalog_search_dashboards({ ...scope, projection: "detailed" })` — same pattern for dashboards.
 
+→ `catalog_search_terms({ ...scope, projection: "detailed" })` — same pattern for glossary terms. `detailed` adds `ownerEntities`, `teamOwnerEntities`, and `tagEntities` — use it when grading term health (missing owner, orphaned, untagged) in one paginated call.
+
 Responses over 16 KB auto-externalize to a `catalog://cache/` resource URI, so a 500-row detailed page stays context-safe. Fetch the URI only when you actually need the rows.
 
 **When to reach for `catalog_summarize_asset` instead:** you need lineage edges, column-level detail, or recent quality-check rows for a single asset. For flat list-shaped questions ("who owns every table in SCHEMA X?", "which dashboards in folder Y are unverified?", "show me the description coverage for database Z"), the search tools with `projection: "detailed"` are the right call.

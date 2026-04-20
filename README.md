@@ -323,7 +323,7 @@ Content lives in [`src/resources/context/`](src/resources/context) — edit the 
 **Read**
 
 - **`catalog_search_tags`** - Tag labels, colors, linked terms.
-- **`catalog_search_terms`** - Glossary terms (hierarchy via `parentTermId` + `depthLevel`, linked tag).
+- **`catalog_search_terms`** - Glossary terms (hierarchy via `parentTermId` + `depthLevel`, linked tag). Set `projection: "detailed"` to inline `ownerEntities`, `teamOwnerEntities`, and `tagEntities` for term-health audits.
 - **`catalog_search_data_products`** - Assets promoted to curated data products. Filter by `entityType` (TABLE/DASHBOARD/TERM), `withTagId`.
 
 **Write**
