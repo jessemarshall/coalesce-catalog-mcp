@@ -102,6 +102,12 @@ Default `projection: "summary"` keeps rows compact (counts only, no UUID arrays)
 - Quality test results: `catalog_search_quality_checks` (scope by `tableId`).
 - Documentation coverage: `catalog_search_columns` with `isDocumented: false` + `tableId` or `schemaId`.
 
+## "Give me my daily Catalog to-do list" (owner cleanup)
+
+→ `catalog_owner_scorecard({ email })` — per-owner hygiene scorecard. Enumerates every table/dashboard/term the user owns and categorises each by issue: thin description, PII/domain-tag coverage, new-asset window, certification, lineage gaps (isolated / upstream-only / downstream-only for tables), and term-specific health (missing owner, orphaned, uncertified).
+
+Returns structured ID lists per category, sorted newest-first by `createdAt DESC`. Complete picture or explicit refusal — no silent truncation. For a rendered walkthrough with remediation prompts, invoke the `catalog-daily-guide` prompt instead of calling the tool directly.
+
 ## AI assistant (async)
 
 1. `catalog_ask_assistant` — submits a question, returns a jobId.
