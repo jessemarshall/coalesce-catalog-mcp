@@ -86,12 +86,21 @@ jobs:
           npm view coalesce-catalog-mcp@${{ steps.channel.outputs.version }} version
 
       - name: Create GitHub Release
+        # Idempotent: if a release for this tag already exists (e.g. curated
+        # notes were drafted before the tag push), leave it alone. The npm
+        # publish above is the load-bearing step; the GitHub Release is just
+        # changelog UI.
         run: |
-          ARGS=(--title "${{ github.ref_name }}" --generate-notes)
+          TAG="${{ github.ref_name }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::notice ::Release $TAG already exists; skipping create."
+            exit 0
+          fi
+          ARGS=(--title "$TAG" --generate-notes)
           if [ "${{ steps.channel.outputs.is_prerelease }}" = "true" ]; then
             ARGS+=(--prerelease)
           fi
-          gh release create "${{ github.ref_name }}" "${ARGS[@]}"
+          gh release create "$TAG" "${ARGS[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
 

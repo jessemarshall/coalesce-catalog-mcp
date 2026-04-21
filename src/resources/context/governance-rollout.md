@@ -209,7 +209,9 @@ A sensible default: one `EDITOR` token per Domain Owner, scoped access enforced 
 - Forgetting terms and dashboards. `catalog_upsert_user_owners` and `catalog_upsert_team_owners` both take `entityType: "DASHBOARD" | "TERM"` too.
 - Using a single shared EDITOR token across the organization. Rotate, scope, and audit.
 
-**How to find unowned T1 assets** — `catalog_summarize_asset kind:"TABLE" id:<T1 candidate>` on each T1 candidate; filter where `ownership.users.length + ownership.teams.length == 0`. Or hand it off to the `catalog-audit-documentation` prompt with an ownership-focused twist.
+**How to find unowned T1 assets** — `catalog_resolve_ownership_gaps schemaId:<T1 schema>` (or `tableIds:<list>` for an explicit T1 set). Returns per-unowned-table evidence bundles: top query authors from recent SQL + 1-hop lineage-neighbor owners. Use the evidence to pick owners, then execute `catalog_upsert_user_owners` / `catalog_upsert_team_owners`. Refuses loudly above 200 unowned tables — narrow the scope if that trips.
+
+**How to grade a single T1 candidate for promotion** — `catalog_audit_data_product_readiness assetKind:"TABLE" assetId:<id>` returns per-axis `pass|warn|fail|na` scores for description / ownership / tags / columnDocs / lineage / quality checks / verification, plus `readyToPromote: true|false`. Pair with `catalog_governance_scorecard` for cross-scope aggregate coverage.
 
 ---
 
@@ -228,6 +230,7 @@ Description-writing is a labor problem, not a Catalog problem. The Catalog gives
 - Generate first drafts in bulk using the asset's name + schema context + sample queries. LLM-friendly — the `catalog-audit-documentation` prompt walks the flow.
 - Route drafts to the assigned owner for approval (email / Slack / whatever works). **Do not auto-approve AI drafts.** Trusted-looking descriptions that are actually wrong are worse than no description.
 - Push approved drafts with `catalog_update_column_metadata` (batched, up to 500 rows).
+- **Propagate a good source-table description to its downstream tables** — once a T1 source (e.g. a `WRK_*` / `DIM_*` / `FCT_*` table) has an approved description, `catalog_propagate_metadata sourceTableId:<id> axes:["description"] maxDepth:2 dryRun:true` computes a diff plan showing which downstream tables would get the description (only blanks, under `overwritePolicy: "ifEmpty"`). Review the plan, then re-issue with `dryRun: false` to execute. Never default-on tags or owners propagation — those require a separate review.
 
 ### PII & compliance metadata
 

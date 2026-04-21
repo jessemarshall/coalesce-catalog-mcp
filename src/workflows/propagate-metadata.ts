@@ -1,0 +1,929 @@
+import { z } from "zod";
+import type { CatalogClient } from "../client.js";
+import {
+  WRITE_ANNOTATIONS,
+  type CatalogToolDefinition,
+  type ToolHandlerExtra,
+} from "../catalog/types.js";
+import {
+  GET_TABLE_DETAIL,
+  GET_TABLES_DETAIL_BATCH,
+  GET_LINEAGES,
+  UPDATE_TABLES,
+  ATTACH_TAGS,
+  UPSERT_USER_OWNERS,
+  UPSERT_TEAM_OWNERS,
+} from "../catalog/operations.js";
+import type {
+  BaseTagEntityInput,
+  EntityTarget,
+  GetLineagesOutput,
+  GetTablesOutput,
+  OwnerEntity,
+  OwnerInput,
+  Table,
+  TeamOwnerEntity,
+  TeamOwnerInput,
+  UpdateTableInput,
+} from "../generated/types.js";
+import { batchResult, withErrorHandling } from "../mcp/tool-helpers.js";
+import { withConfirmation } from "../mcp/confirmation.js";
+
+type Axis = "description" | "tags" | "owners";
+type OverwritePolicy = "ifEmpty" | "overwrite";
+
+// Traversal width caps mirror assess-impact's contract: the tool refuses
+// rather than silently truncating on wide hubs. Propagation is more
+// consequential than reading impact (mutations), so the same "complete or
+// refuse" rule applies even more strongly.
+const WIDTH_CAPS: Record<number, number> = {
+  2: 2000,
+  3: 500,
+};
+
+const LINEAGE_PAGE_SIZE = 500;
+const LINEAGE_PAGES_PER_NODE_MAX = 20;
+const LINEAGE_FANOUT_PARALLELISM = 20;
+const ENRICHMENT_BATCH_SIZE = 500;
+
+// Mutation batch sizes. APIs cap each at 500, but the upsert-owners shape
+// is "one userId, many targetEntities" so the fanout there is per-user, not
+// per-target-table. TAG_ATTACH_BATCH_SIZE stays below the API cap to keep
+// individual requests small enough that a retry is cheap.
+const UPDATE_TABLES_BATCH_SIZE = 500;
+const TAG_ATTACH_BATCH_SIZE = 500;
+
+const PropagateMetadataInputShape = {
+  sourceTableId: z
+    .string()
+    .min(1)
+    .describe("Catalog UUID of the source table whose metadata should propagate downstream."),
+  axes: z
+    .array(z.enum(["description", "tags", "owners"]))
+    .optional()
+    .describe(
+      "Which metadata axes to propagate. Default: ['description'] only. Tags and owners are opt-in per-call — description propagation is low-risk (filling in a blank is additive), while owner propagation is high-trust and should only run when the caller has explicitly validated that the source's owners are the right owners for every reached downstream table."
+    ),
+  maxDepth: z
+    .number()
+    .int()
+    .min(1)
+    .max(3)
+    .optional()
+    .describe(
+      "How many lineage hops downstream to propagate. 1 = immediate children only (always complete; cheapest). 2 = children-of-children (refuses if >2000 distinct nodes). 3 = deep propagation (refuses if >500). Default 1. Dashboards encountered in lineage are listed as `dashboardsSkipped` and never mutated — propagation is table-to-table only."
+    ),
+  overwritePolicy: z
+    .enum(["ifEmpty", "overwrite"])
+    .optional()
+    .describe(
+      "How to handle targets that already carry the axis's metadata:\n" +
+        "  - 'ifEmpty' (default) — only write when the target has no value for that axis. Safest; cannot clobber hand-curated metadata. Tags + owners: 'ifEmpty' = skip if the target has ANY tags / ANY owners; merges are opt-in via 'overwrite'.\n" +
+        "  - 'overwrite' — write the source's value regardless. For description: replaces the target's externalDescription. For tags + owners: additively merges (adds missing source tags/owners; never removes target-native ones).\n\n" +
+        "Neither policy ever removes metadata from the target — propagation is write-add-or-overwrite, not mirror."
+    ),
+  dryRun: z
+    .boolean()
+    .optional()
+    .describe(
+      "When true (default), compute the full diff plan and return without executing any mutations. When false, execute the plan — requires interactive confirmation via MCP elicitation (or COALESCE_CATALOG_SKIP_CONFIRMATIONS=true)."
+    ),
+};
+
+interface Owners {
+  userOwners: Array<{ userId: string; email: string | null; fullName: string | null }>;
+  teamOwners: Array<{ teamId: string; name: string | null }>;
+}
+
+interface TargetMeta {
+  id: string;
+  name: string | null;
+  depth: number;
+  description: string | null;
+  externalDescription: string | null;
+  tagLabels: string[];
+  owners: Owners;
+}
+
+interface SourceMeta {
+  id: string;
+  name: string | null;
+  description: string | null;
+  tagLabels: string[];
+  owners: Owners;
+}
+
+interface DescriptionChange {
+  action: "add" | "update" | "skip";
+  reason: string;
+  before: string | null;
+  after: string | null;
+}
+
+interface TagsChange {
+  action: "add" | "skip";
+  reason: string;
+  added: string[];
+  alreadyPresent: string[];
+}
+
+interface OwnersChange {
+  action: "add" | "skip";
+  reason: string;
+  addedUsers: Array<{ userId: string; email: string | null; fullName: string | null }>;
+  addedTeams: Array<{ teamId: string; name: string | null }>;
+  alreadyOwnedBy: {
+    userIds: string[];
+    teamIds: string[];
+  };
+}
+
+interface TargetPlan {
+  tableId: string;
+  tableName: string | null;
+  depth: number;
+  changes: {
+    description?: DescriptionChange;
+    tags?: TagsChange;
+    owners?: OwnersChange;
+  };
+}
+
+function isNonEmpty(v: unknown): v is string {
+  return typeof v === "string" && v.trim().length > 0;
+}
+
+function extractOwners(row: Record<string, unknown>): Owners {
+  const userOwners = Array.isArray(row.ownerEntities)
+    ? (row.ownerEntities as Array<Record<string, unknown>>)
+        .filter((o) => o.userId != null)
+        .map((o) => {
+          const u = (o.user as Record<string, unknown> | undefined) ?? {};
+          return {
+            userId: o.userId as string,
+            email: (u.email as string | null) ?? null,
+            fullName: (u.fullName as string | null) ?? null,
+          };
+        })
+    : [];
+  const teamOwners = Array.isArray(row.teamOwnerEntities)
+    ? (row.teamOwnerEntities as Array<Record<string, unknown>>)
+        .filter((t) => t.teamId != null)
+        .map((t) => {
+          const team = (t.team as Record<string, unknown> | undefined) ?? {};
+          return {
+            teamId: t.teamId as string,
+            name: (team.name as string | null) ?? null,
+          };
+        })
+    : [];
+  return { userOwners, teamOwners };
+}
+
+function extractTagLabels(row: Record<string, unknown>): string[] {
+  if (!Array.isArray(row.tagEntities)) return [];
+  const out: string[] = [];
+  for (const t of row.tagEntities as Array<Record<string, unknown>>) {
+    const tag = t.tag as Record<string, unknown> | undefined;
+    const label = tag?.label;
+    if (typeof label === "string" && label.length > 0) out.push(label);
+  }
+  return out;
+}
+
+function extractSource(row: Record<string, unknown>): SourceMeta {
+  // For propagation, `description` is the right read surface — it's the
+  // merged value the consumer sees. We write back to `externalDescription`
+  // on targets (the only source-style field UPDATE_TABLES exposes), but the
+  // "ifEmpty" check on a target reads against `description` so we're
+  // deciding against the displayed value, not just the writable field.
+  const description = isNonEmpty(row.description)
+    ? (row.description as string)
+    : null;
+  return {
+    id: row.id as string,
+    name: (row.name as string | null) ?? null,
+    description,
+    tagLabels: extractTagLabels(row),
+    owners: extractOwners(row),
+  };
+}
+
+function extractTarget(
+  row: Record<string, unknown>,
+  depth: number
+): TargetMeta {
+  return {
+    id: row.id as string,
+    name: (row.name as string | null) ?? null,
+    depth,
+    description: isNonEmpty(row.description)
+      ? (row.description as string)
+      : null,
+    externalDescription: isNonEmpty(row.externalDescription)
+      ? (row.externalDescription as string)
+      : null,
+    tagLabels: extractTagLabels(row),
+    owners: extractOwners(row),
+  };
+}
+
+async function fetchAllDownstreamTableEdges(
+  client: CatalogClient,
+  parentId: string
+): Promise<string[]> {
+  // Only table→table edges matter for propagation. Dashboards get tracked
+  // separately so callers can see what was skipped, but they're not returned
+  // here because they don't continue the BFS.
+  const tableIds: string[] = [];
+  for (let page = 0; page < LINEAGE_PAGES_PER_NODE_MAX; page++) {
+    const resp = await client.execute<{ getLineages: GetLineagesOutput }>(
+      GET_LINEAGES,
+      {
+        scope: { parentTableId: parentId },
+        pagination: { nbPerPage: LINEAGE_PAGE_SIZE, page },
+      }
+    );
+    const rows = resp.getLineages.data;
+    for (const e of rows) {
+      if (e.childTableId) tableIds.push(e.childTableId);
+    }
+    if (rows.length < LINEAGE_PAGE_SIZE) return tableIds;
+  }
+  throw new Error(
+    `Lineage pagination exceeded ${LINEAGE_PAGES_PER_NODE_MAX} pages for ` +
+      `table ${parentId} (>${LINEAGE_PAGES_PER_NODE_MAX * LINEAGE_PAGE_SIZE} downstream edges). ` +
+      `Refusing to produce a partial propagation plan.`
+  );
+}
+
+async function fetchDashboardChildCount(
+  client: CatalogClient,
+  parentId: string
+): Promise<number> {
+  // Count only — one probe call per parent. We surface "how many dashboards
+  // would have been skipped" so the caller can decide whether propagation
+  // should be extended to cover them (it won't here; dashboards aren't
+  // writable via this tool).
+  const resp = await client.execute<{ getLineages: GetLineagesOutput }>(
+    GET_LINEAGES,
+    {
+      scope: { parentTableId: parentId, withChildAssetType: "DASHBOARD" },
+      pagination: { nbPerPage: 1, page: 0 },
+    }
+  );
+  const total = resp.getLineages.totalCount;
+  if (typeof total !== "number" || !Number.isFinite(total)) {
+    throw new Error(
+      `getLineages returned non-numeric totalCount (${String(total)}) for ` +
+        `dashboard-child probe of table ${parentId}; cannot reliably count skipped dashboards.`
+    );
+  }
+  return total;
+}
+
+async function traverseDownstreamTables(
+  client: CatalogClient,
+  startId: string,
+  maxDepth: number
+): Promise<{
+  visitedDepths: Map<string, number>;
+  dashboardsSkipped: number;
+}> {
+  const visitedDepths = new Map<string, number>();
+  visitedDepths.set(startId, 0);
+  let frontier: string[] = [startId];
+  let dashboardsSkipped = 0;
+
+  for (let depth = 1; depth <= maxDepth; depth++) {
+    if (depth >= 2) {
+      const cap = WIDTH_CAPS[depth];
+      if (frontier.length > cap) {
+        throw new Error(
+          `Graph too wide for complete propagation at depth ${depth}: ` +
+            `${frontier.length} nodes in the depth-${depth - 1} frontier exceeds the ` +
+            `${cap}-node cap. Reduce maxDepth, or run depth=1 first to pick a safer sub-tree.`
+        );
+      }
+    }
+
+    const tableEdgesPerNode: string[][] = [];
+    const dashboardCountsPerNode: number[] = [];
+    for (let i = 0; i < frontier.length; i += LINEAGE_FANOUT_PARALLELISM) {
+      const slice = frontier.slice(i, i + LINEAGE_FANOUT_PARALLELISM);
+      const sliceResults = await Promise.all(
+        slice.map(async (node) => {
+          const [tableEdges, dashCount] = await Promise.all([
+            fetchAllDownstreamTableEdges(client, node),
+            fetchDashboardChildCount(client, node),
+          ]);
+          return { tableEdges, dashCount };
+        })
+      );
+      for (const r of sliceResults) {
+        tableEdgesPerNode.push(r.tableEdges);
+        dashboardCountsPerNode.push(r.dashCount);
+      }
+    }
+    for (const c of dashboardCountsPerNode) dashboardsSkipped += c;
+
+    const nextFrontier: string[] = [];
+    for (const tableIds of tableEdgesPerNode) {
+      for (const childId of tableIds) {
+        if (visitedDepths.has(childId)) continue;
+        visitedDepths.set(childId, depth);
+        nextFrontier.push(childId);
+      }
+    }
+
+    if (nextFrontier.length === 0) break;
+    frontier = nextFrontier;
+  }
+
+  return { visitedDepths, dashboardsSkipped };
+}
+
+async function enrichTables(
+  client: CatalogClient,
+  ids: string[]
+): Promise<Map<string, Record<string, unknown>>> {
+  const map = new Map<string, Record<string, unknown>>();
+  if (ids.length === 0) return map;
+  for (let i = 0; i < ids.length; i += ENRICHMENT_BATCH_SIZE) {
+    const slice = ids.slice(i, i + ENRICHMENT_BATCH_SIZE);
+    const resp = await client.execute<{ getTables: GetTablesOutput }>(
+      GET_TABLES_DETAIL_BATCH,
+      {
+        scope: { ids: slice },
+        pagination: { nbPerPage: slice.length, page: 0 },
+      }
+    );
+    for (const row of resp.getTables.data) {
+      map.set(row.id, row as unknown as Record<string, unknown>);
+    }
+  }
+  return map;
+}
+
+function planDescription(
+  source: SourceMeta,
+  target: TargetMeta,
+  policy: OverwritePolicy
+): DescriptionChange | null {
+  if (!source.description) {
+    // Nothing to propagate — source has no description. We still emit a
+    // skip entry so the caller sees why description changes didn't land,
+    // but only when description is in the requested axes set.
+    return {
+      action: "skip",
+      reason: "source table has no description to propagate",
+      before: target.description,
+      after: target.description,
+    };
+  }
+  if (!target.description) {
+    return {
+      action: "add",
+      reason: "target has no description; filling in from source",
+      before: null,
+      after: source.description,
+    };
+  }
+  if (policy === "ifEmpty") {
+    return {
+      action: "skip",
+      reason: "target already has a description (overwritePolicy=ifEmpty)",
+      before: target.description,
+      after: target.description,
+    };
+  }
+  if (target.description === source.description) {
+    return {
+      action: "skip",
+      reason: "target description already matches source",
+      before: target.description,
+      after: target.description,
+    };
+  }
+  return {
+    action: "update",
+    reason: "overwriting target description from source (overwritePolicy=overwrite)",
+    before: target.description,
+    after: source.description,
+  };
+}
+
+function planTags(
+  source: SourceMeta,
+  target: TargetMeta,
+  policy: OverwritePolicy
+): TagsChange | null {
+  if (source.tagLabels.length === 0) {
+    return {
+      action: "skip",
+      reason: "source table has no tags to propagate",
+      added: [],
+      alreadyPresent: [],
+    };
+  }
+  // ifEmpty for a list axis = "target has nothing" (no tags at all). Otherwise
+  // the tool behaves additively (merge) regardless of policy for tags.
+  if (policy === "ifEmpty" && target.tagLabels.length > 0) {
+    return {
+      action: "skip",
+      reason: "target already has tags (overwritePolicy=ifEmpty)",
+      added: [],
+      alreadyPresent: [...target.tagLabels],
+    };
+  }
+  const existing = new Set(target.tagLabels);
+  const toAdd: string[] = [];
+  const alreadyPresent: string[] = [];
+  for (const label of source.tagLabels) {
+    if (existing.has(label)) alreadyPresent.push(label);
+    else toAdd.push(label);
+  }
+  if (toAdd.length === 0) {
+    return {
+      action: "skip",
+      reason: "every source tag is already attached to the target",
+      added: [],
+      alreadyPresent,
+    };
+  }
+  return {
+    action: "add",
+    reason: `adding ${toAdd.length} missing tag(s) from source`,
+    added: toAdd,
+    alreadyPresent,
+  };
+}
+
+function planOwners(
+  source: SourceMeta,
+  target: TargetMeta,
+  policy: OverwritePolicy
+): OwnersChange | null {
+  const sourceUserIds = source.owners.userOwners.map((o) => o.userId);
+  const sourceTeamIds = source.owners.teamOwners.map((o) => o.teamId);
+  if (sourceUserIds.length === 0 && sourceTeamIds.length === 0) {
+    return {
+      action: "skip",
+      reason: "source table has no owners to propagate",
+      addedUsers: [],
+      addedTeams: [],
+      alreadyOwnedBy: {
+        userIds: target.owners.userOwners.map((o) => o.userId),
+        teamIds: target.owners.teamOwners.map((o) => o.teamId),
+      },
+    };
+  }
+  const targetUserIds = new Set(target.owners.userOwners.map((o) => o.userId));
+  const targetTeamIds = new Set(target.owners.teamOwners.map((o) => o.teamId));
+  if (
+    policy === "ifEmpty" &&
+    (targetUserIds.size > 0 || targetTeamIds.size > 0)
+  ) {
+    return {
+      action: "skip",
+      reason: "target already has owners (overwritePolicy=ifEmpty)",
+      addedUsers: [],
+      addedTeams: [],
+      alreadyOwnedBy: {
+        userIds: [...targetUserIds],
+        teamIds: [...targetTeamIds],
+      },
+    };
+  }
+  const addedUsers = source.owners.userOwners.filter(
+    (o) => !targetUserIds.has(o.userId)
+  );
+  const addedTeams = source.owners.teamOwners.filter(
+    (o) => !targetTeamIds.has(o.teamId)
+  );
+  if (addedUsers.length === 0 && addedTeams.length === 0) {
+    return {
+      action: "skip",
+      reason: "every source owner is already attached to the target",
+      addedUsers: [],
+      addedTeams: [],
+      alreadyOwnedBy: {
+        userIds: [...targetUserIds],
+        teamIds: [...targetTeamIds],
+      },
+    };
+  }
+  return {
+    action: "add",
+    reason: `adding ${addedUsers.length} user-owner(s) and ${addedTeams.length} team-owner(s) from source`,
+    addedUsers,
+    addedTeams,
+    alreadyOwnedBy: {
+      userIds: [...targetUserIds],
+      teamIds: [...targetTeamIds],
+    },
+  };
+}
+
+function computePlan(
+  source: SourceMeta,
+  targets: TargetMeta[],
+  axes: Set<Axis>,
+  policy: OverwritePolicy
+): TargetPlan[] {
+  const plans: TargetPlan[] = [];
+  for (const target of targets) {
+    const plan: TargetPlan = {
+      tableId: target.id,
+      tableName: target.name,
+      depth: target.depth,
+      changes: {},
+    };
+    if (axes.has("description")) {
+      const c = planDescription(source, target, policy);
+      if (c) plan.changes.description = c;
+    }
+    if (axes.has("tags")) {
+      const c = planTags(source, target, policy);
+      if (c) plan.changes.tags = c;
+    }
+    if (axes.has("owners")) {
+      const c = planOwners(source, target, policy);
+      if (c) plan.changes.owners = c;
+    }
+    plans.push(plan);
+  }
+  return plans;
+}
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+async function executeDescription(
+  client: CatalogClient,
+  source: SourceMeta,
+  plans: TargetPlan[]
+): Promise<Record<string, unknown>> {
+  // UPDATE_TABLES writes to externalDescription (the only writable surface);
+  // the plan's "after" value is the source.description, sourced from the
+  // merged display value. If the target later sets descriptionRaw, our
+  // external-description write becomes shadowed — acceptable for the "fill
+  // in a gap" use case and surfaced in the tool description.
+  const pending = plans
+    .filter(
+      (p) =>
+        p.changes.description &&
+        (p.changes.description.action === "add" ||
+          p.changes.description.action === "update")
+    )
+    .map((p) => ({
+      id: p.tableId,
+      externalDescription: source.description!,
+    }));
+  if (pending.length === 0) {
+    return { applied: 0, planned: 0, skipped: true };
+  }
+  let applied = 0;
+  const failures: Array<{ batch: number; expected: number; returned: number }> = [];
+  const batches = chunk(pending, UPDATE_TABLES_BATCH_SIZE);
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i];
+    const resp = await client.execute<{ updateTables: Table[] }>(UPDATE_TABLES, {
+      data: batch satisfies UpdateTableInput[],
+    });
+    const returned = resp.updateTables?.length ?? 0;
+    applied += returned;
+    if (returned < batch.length) {
+      failures.push({ batch: i, expected: batch.length, returned });
+    }
+  }
+  const result: Record<string, unknown> = {
+    applied,
+    planned: pending.length,
+  };
+  if (failures.length > 0) {
+    result.partialFailure = true;
+    result.failures = failures;
+  }
+  return result;
+}
+
+async function executeTags(
+  client: CatalogClient,
+  plans: TargetPlan[]
+): Promise<Record<string, unknown>> {
+  // Flatten plans into one attach-row per (tableId, label) pair. The API
+  // auto-creates tag labels that don't exist yet — safe for propagation.
+  const attach: BaseTagEntityInput[] = [];
+  for (const p of plans) {
+    const c = p.changes.tags;
+    if (!c || c.action !== "add") continue;
+    for (const label of c.added) {
+      attach.push({ entityType: "TABLE", entityId: p.tableId, label });
+    }
+  }
+  if (attach.length === 0) {
+    return { applied: 0, planned: 0, skipped: true };
+  }
+  let successBatches = 0;
+  let failedBatches = 0;
+  const batches = chunk(attach, TAG_ATTACH_BATCH_SIZE);
+  for (const batch of batches) {
+    const resp = await client.execute<{ attachTags: boolean }>(ATTACH_TAGS, {
+      data: batch,
+    });
+    if (resp.attachTags) successBatches += 1;
+    else failedBatches += 1;
+  }
+  const result: Record<string, unknown> = {
+    // ATTACH_TAGS has no per-row result — we only know the whole batch
+    // succeeded or failed. "applied" is attempts-that-the-api-confirmed, so
+    // it may overcount if the server's `true` return value was optimistic.
+    // Surfaced plainly so the caller can decide whether to re-probe.
+    planned: attach.length,
+    batchesTotal: batches.length,
+    batchesAccepted: successBatches,
+    batchesRejected: failedBatches,
+  };
+  if (failedBatches > 0) {
+    result.partialFailure = true;
+  }
+  return result;
+}
+
+async function executeOwners(
+  client: CatalogClient,
+  plans: TargetPlan[]
+): Promise<Record<string, unknown>> {
+  // Group by userId / teamId — the API shape is "one owner, many
+  // targetEntities." We issue one call per unique owner with all targets
+  // that need that owner attached.
+  const userTargets = new Map<string, EntityTarget[]>();
+  const teamTargets = new Map<string, EntityTarget[]>();
+  for (const p of plans) {
+    const c = p.changes.owners;
+    if (!c || c.action !== "add") continue;
+    const target: EntityTarget = { entityType: "TABLE", entityId: p.tableId };
+    for (const u of c.addedUsers) {
+      const list = userTargets.get(u.userId) ?? [];
+      list.push(target);
+      userTargets.set(u.userId, list);
+    }
+    for (const t of c.addedTeams) {
+      const list = teamTargets.get(t.teamId) ?? [];
+      list.push(target);
+      teamTargets.set(t.teamId, list);
+    }
+  }
+
+  const userResults = [];
+  for (const [userId, targets] of userTargets) {
+    const resp = await client.execute<{ upsertUserOwners: OwnerEntity[] }>(
+      UPSERT_USER_OWNERS,
+      { data: { userId, targetEntities: targets } satisfies OwnerInput }
+    );
+    userResults.push(batchResult("upserted", resp.upsertUserOwners, targets.length));
+  }
+  const teamResults = [];
+  for (const [teamId, targets] of teamTargets) {
+    const resp = await client.execute<{ upsertTeamOwners: TeamOwnerEntity[] }>(
+      UPSERT_TEAM_OWNERS,
+      { data: { teamId, targetEntities: targets } satisfies TeamOwnerInput }
+    );
+    teamResults.push(batchResult("upserted", resp.upsertTeamOwners, targets.length));
+  }
+
+  const plannedUserAttachments = [...userTargets.values()].reduce(
+    (a, b) => a + b.length,
+    0
+  );
+  const plannedTeamAttachments = [...teamTargets.values()].reduce(
+    (a, b) => a + b.length,
+    0
+  );
+  const appliedUserAttachments = userResults.reduce(
+    (a, r) => a + (r.upserted as number),
+    0
+  );
+  const appliedTeamAttachments = teamResults.reduce(
+    (a, r) => a + (r.upserted as number),
+    0
+  );
+  const result: Record<string, unknown> = {
+    planned: plannedUserAttachments + plannedTeamAttachments,
+    applied: appliedUserAttachments + appliedTeamAttachments,
+    byUser: userResults,
+    byTeam: teamResults,
+  };
+  if (
+    appliedUserAttachments < plannedUserAttachments ||
+    appliedTeamAttachments < plannedTeamAttachments
+  ) {
+    result.partialFailure = true;
+  }
+  return result;
+}
+
+function summarisePlan(
+  axes: Set<Axis>,
+  plans: TargetPlan[]
+): Record<string, unknown> {
+  const byAxis: Record<string, { add: number; update: number; skip: number }> = {};
+  if (axes.has("description"))
+    byAxis.description = { add: 0, update: 0, skip: 0 };
+  if (axes.has("tags")) byAxis.tags = { add: 0, update: 0, skip: 0 };
+  if (axes.has("owners")) byAxis.owners = { add: 0, update: 0, skip: 0 };
+
+  for (const p of plans) {
+    if (p.changes.description) {
+      byAxis.description![p.changes.description.action] += 1;
+    }
+    if (p.changes.tags) {
+      byAxis.tags![p.changes.tags.action] += 1;
+    }
+    if (p.changes.owners) {
+      byAxis.owners![p.changes.owners.action] += 1;
+    }
+  }
+
+  let mutations = 0;
+  for (const p of plans) {
+    if (p.changes.description?.action === "add") mutations += 1;
+    if (p.changes.description?.action === "update") mutations += 1;
+    if (p.changes.tags?.action === "add") mutations += 1;
+    if (p.changes.owners?.action === "add") mutations += 1;
+  }
+  return {
+    tablesInPlan: plans.length,
+    actionsByAxis: byAxis,
+    plannedTablesWithMutations: mutations,
+  };
+}
+
+interface PropagateInput extends Record<string, unknown> {
+  sourceTableId: string;
+  axes?: Axis[];
+  maxDepth?: number;
+  overwritePolicy?: OverwritePolicy;
+  dryRun?: boolean;
+}
+
+async function runPropagation(
+  args: PropagateInput,
+  client: CatalogClient,
+  _extra?: ToolHandlerExtra
+): Promise<unknown> {
+  const axes = new Set<Axis>(args.axes ?? ["description"]);
+  const maxDepth = args.maxDepth ?? 1;
+  const overwritePolicy: OverwritePolicy = args.overwritePolicy ?? "ifEmpty";
+  const dryRun = args.dryRun ?? true;
+
+  // 1. Source detail.
+  const detailResp = await client.execute<{
+    getTables: { data: Record<string, unknown>[] };
+  }>(GET_TABLE_DETAIL, { ids: [args.sourceTableId] });
+  const sourceRow = detailResp.getTables.data[0];
+  if (!sourceRow) {
+    return { notFound: true, sourceTableId: args.sourceTableId };
+  }
+  const source = extractSource(sourceRow);
+
+  // 2. Traverse downstream tables (with dashboard-child counting).
+  const { visitedDepths, dashboardsSkipped } = await traverseDownstreamTables(
+    client,
+    args.sourceTableId,
+    maxDepth
+  );
+
+  // Exclude the source itself from the mutation universe.
+  const targetIds = [...visitedDepths.keys()].filter(
+    (id) => id !== args.sourceTableId
+  );
+  // 3. Enrich every reached target.
+  const enrichment = await enrichTables(client, targetIds);
+  // Completeness contract: every id we reached via lineage must be enriched.
+  // Otherwise we'd silently skip a target we reached, producing an
+  // under-inclusive plan that the user would accept in good faith.
+  const missing = targetIds.filter((id) => !enrichment.has(id));
+  if (missing.length > 0) {
+    const sample = missing.slice(0, 5).join(", ");
+    throw new Error(
+      `Detail enrichment returned no row for ${missing.length} downstream ` +
+        `table(s) reached via lineage (sample: ${sample}). Refusing to emit ` +
+        `a partial propagation plan.`
+    );
+  }
+  const targets: TargetMeta[] = targetIds.map((id) =>
+    extractTarget(enrichment.get(id)!, visitedDepths.get(id)!)
+  );
+  // Sort by depth, then name — deterministic output order makes the dry-run
+  // plan diff-friendly when the caller re-runs the tool.
+  targets.sort(
+    (a, b) => a.depth - b.depth || (a.name ?? "").localeCompare(b.name ?? "")
+  );
+
+  // 4. Compute the diff plan.
+  const plans = computePlan(source, targets, axes, overwritePolicy);
+
+  const baseResponse: Record<string, unknown> = {
+    source: {
+      id: source.id,
+      name: source.name,
+      description: source.description,
+      tagLabels: source.tagLabels,
+      owners: source.owners,
+    },
+    config: {
+      axes: [...axes],
+      maxDepth,
+      overwritePolicy,
+      dryRun,
+    },
+    traversal: {
+      tablesReached: targetIds.length,
+      dashboardsSkipped,
+      maxDepthRequested: maxDepth,
+    },
+    plan: plans,
+    summary: summarisePlan(axes, plans),
+  };
+
+  if (dryRun) {
+    return baseResponse;
+  }
+
+  // 5. Execute.
+  const execution: Record<string, unknown> = {};
+  if (axes.has("description")) {
+    execution.description = await executeDescription(client, source, plans);
+  }
+  if (axes.has("tags")) {
+    execution.tags = await executeTags(client, plans);
+  }
+  if (axes.has("owners")) {
+    execution.owners = await executeOwners(client, plans);
+  }
+  return { ...baseResponse, execution };
+}
+
+function summarisePropagation(args: PropagateInput): string {
+  const axes = args.axes ?? ["description"];
+  const depth = args.maxDepth ?? 1;
+  const policy = args.overwritePolicy ?? "ifEmpty";
+  return (
+    `Propagate [${axes.join(", ")}] downstream from table ${args.sourceTableId} ` +
+    `(depth=${depth}, overwritePolicy=${policy}). Irreversible for added metadata — ` +
+    `review the dry-run plan first.`
+  );
+}
+
+export function definePropagateMetadata(client: CatalogClient): CatalogToolDefinition {
+  return {
+    name: "catalog_propagate_metadata",
+    config: {
+      title: "Propagate Metadata Downstream",
+      description:
+        "Propagate one or more metadata axes (description, tags, owners) from a source table downstream along lineage — one call produces a typed diff plan plus optional execution with partial-failure tracking.\n\n" +
+        "**Default behaviour is dry-run (`dryRun: true`)**: returns the full plan with per-table per-axis decisions and never mutates anything. Set `dryRun: false` to execute; that path requests interactive confirmation via MCP elicitation (set COALESCE_CATALOG_SKIP_CONFIRMATIONS=true for vetted non-interactive callers).\n\n" +
+        "**Axes are opt-in.** The default is `['description']` because filling in a blank description is low-risk; tags and owners require the caller to have *validated* that the source's owners/tags are the right ones for every downstream table. Passing `['owners']` without checking will attribute consumers to the source owner and misdirect on-call escalations.\n\n" +
+        "**Completeness contract (mirrors catalog_assess_impact):** the tool refuses rather than silently truncating when the downstream graph is too wide — 2000 distinct nodes at depth 2, 500 at depth 3. Every pagination loop has a hard ceiling with a loud error if exceeded. Dashboards encountered downstream are counted in `traversal.dashboardsSkipped` and never mutated — propagation is table-to-table only.\n\n" +
+        "**Overwrite policy:**\n" +
+        "  - `ifEmpty` (default): only write if the target has no value on that axis. Tags/owners: skip if the target has ANY tags/owners.\n" +
+        "  - `overwrite`: description is replaced; tags/owners are additively merged (add missing; never remove target-native values).\n" +
+        "Neither policy ever removes metadata — propagation is write-or-merge, not mirror.\n\n" +
+        "**Writable surface caveats:**\n" +
+        "  - description is written to `externalDescription` (the only writable description field on UPDATE_TABLES). If the target later sets `descriptionRaw` in Catalog UI, the display surfaces `descriptionRaw` and the propagated externalDescription is shadowed. Acceptable for gap-filling.\n" +
+        "  - tags use ATTACH_TAGS (auto-creates missing labels). The API returns a boolean per batch, not per row — `partialFailure` flags the batch, not the specific row.\n" +
+        "  - owners use UPSERT_USER_OWNERS / UPSERT_TEAM_OWNERS per distinct owner, each carrying the full target list.\n\n" +
+        "Pair with catalog_audit_data_product_readiness to grade the source before propagating, and catalog_resolve_ownership_gaps to pick the right owner before attaching.",
+      inputSchema: PropagateMetadataInputShape,
+      annotations: WRITE_ANNOTATIONS,
+    },
+    handler: withErrorHandling(
+      async (rawArgs, c, extra) => {
+        const args = rawArgs as PropagateInput;
+        const dryRun = args.dryRun ?? true;
+        if (dryRun) {
+          // Dry-run bypasses the confirmation dialog entirely — no mutations
+          // will fire. Callers preview the plan, then re-issue with
+          // dryRun:false to commit.
+          return runPropagation(args, c, extra);
+        }
+        // Non-dry-run: route through withConfirmation. The confirmation
+        // dialog will fire before any API writes happen.
+        const guarded = withConfirmation<PropagateInput>(
+          {
+            action: "Propagate metadata downstream",
+            summarize: summarisePropagation,
+          },
+          runPropagation
+        );
+        return guarded(args, c, extra);
+      },
+      client
+    ),
+  };
+}
