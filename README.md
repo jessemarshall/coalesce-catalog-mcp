@@ -343,7 +343,10 @@ Content lives in [`src/resources/context/`](src/resources/context) — edit the 
 **Read**
 
 - **`catalog_search_users`** - List Catalog users (id, email, role, `ownedAssetCount`). Set `projection: "detailed"` to inline `ownedAssetIds` and resolve email → owned assets in one scan.
+- **`catalog_get_user_owned_assets`** - Paginated list of asset UUIDs owned by a user (by `userId`). Scans up to 10k users internally. Prefer `catalog_search_users({ projection: "detailed" })` when starting from an email.
 - **`catalog_search_teams`** - List teams (members, Slack routing, `memberCount`, `ownedAssetCount`). Set `projection: "detailed"` to inline `memberIds` + `ownedAssetIds`.
+- **`catalog_get_team_members`** - Paginated list of user UUIDs belonging to a team (by `teamId`). Scans up to 10k teams internally. Prefer `catalog_search_teams({ projection: "detailed" })` when starting from a team name.
+- **`catalog_get_team_owned_assets`** - Paginated list of asset UUIDs owned by a team (by `teamId`). Same scan strategy as `catalog_get_team_members`.
 - **`catalog_search_quality_checks`** - Data-quality test results (dbt, Monte Carlo, Soda, Great Expectations, etc.). Scope by `tableId`.
 - **`catalog_search_pinned_assets`** - Curated "see also" links between catalog entities.
 
