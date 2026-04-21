@@ -102,6 +102,26 @@ Default `projection: "summary"` keeps rows compact (counts only, no UUID arrays)
 - Quality test results: `catalog_search_quality_checks` (scope by `tableId`).
 - Documentation coverage: `catalog_search_columns` with `isDocumented: false` + `tableId` or `schemaId`.
 
+## "Is this asset ready to promote?" (per-asset readiness)
+
+→ `catalog_audit_data_product_readiness({ assetKind, assetId })` — one-shot eight-axis readiness report for a TABLE or DASHBOARD. Grades description / ownership / tags / column-doc coverage / upstream + downstream lineage edges / quality checks / verification with hardcoded thresholds, returns per-axis `status: "pass"|"warn"|"fail"|"na"`, `signals`, and actionable `gaps`. Overall `readyToPromote: true` iff no axis fails (warns are allowed).
+
+DASHBOARD assets always report `na` for columnDocs and qualityChecks. Tables whose column count exceeds `columnSampleCap` (default 200) flag `sampled: true` on the columnDocs axis.
+
+Reach for this instead of chaining `catalog_summarize_asset` + `catalog_search_columns` + two `catalog_get_lineages` calls + `catalog_search_quality_checks` when the question is "should we promote this one asset?"
+
+## "Find every unowned table in this scope and tell me who should own them"
+
+→ `catalog_resolve_ownership_gaps({ schemaId | databaseId | tableIds })` — scope an audit, find the unowned subset, gather per-table evidence (top query authors from recent queries + 1-hop upstream/downstream lineage-neighbor owners). Raw signals only, no confidence scores. Refuses loudly above 200 unowned tables — narrow via schemaId or a tighter tableIds batch.
+
+Pair with `catalog_governance_scorecard` (size the ownership gap across a scope) then this tool (close it by picking owners from the evidence). Act on the evidence via `catalog_upsert_user_owners` / `catalog_upsert_team_owners`.
+
+## "Fill in descriptions / tags / owners downstream from this table"
+
+→ `catalog_propagate_metadata({ sourceTableId, axes, maxDepth, overwritePolicy, dryRun })` — compute a typed diff plan for propagating description / tags / owners from a source table along downstream lineage. Default is dry-run + `axes: ['description']` + `overwritePolicy: 'ifEmpty'` — the safest possible invocation.
+
+Tags and owners are opt-in per-call (owner propagation is high-trust; don't default it). Non-dry-run requires MCP elicitation confirmation. Width caps + pagination ceilings match `catalog_assess_impact` — refuses rather than silently truncating on wide graphs. Partial-failure tracking is per-axis in the execution response.
+
 ## "Give me my daily Catalog to-do list" (owner cleanup)
 
 → `catalog_owner_scorecard({ email })` — per-owner hygiene scorecard. Enumerates every table/dashboard/term the user owns and categorises each by issue: thin description, PII/domain-tag coverage, new-asset window, certification, lineage gaps (isolated / upstream-only / downstream-only for tables), and term-specific health (missing owner, orphaned, uncertified).
