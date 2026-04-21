@@ -18,6 +18,9 @@ import { defineAssessImpact } from "./workflows/assess-impact.js";
 import { defineGovernanceScorecard } from "./workflows/governance-scorecard.js";
 import { defineOwnerScorecard } from "./workflows/owner-scorecard.js";
 import { defineColumnLineage } from "./workflows/column-lineage.js";
+import { defineAuditDataProductReadiness } from "./workflows/audit-data-product-readiness.js";
+import { defineResolveOwnershipGaps } from "./workflows/resolve-ownership-gaps.js";
+import { definePropagateMetadata } from "./workflows/propagate-metadata.js";
 import { registerCatalogResources } from "./resources/index.js";
 import { registerCatalogPrompts } from "./prompts/index.js";
 import { cleanupStaleSessions } from "./cache/store.js";
@@ -65,6 +68,20 @@ COMPOSED WORKFLOW TOOLS — prefer these over chaining 4-6 primitives:
   with the catalog-daily-guide prompt for a rendered walkthrough.
 - catalog_trace_missing_lineage — diagnose where a table's lineage coverage is
   thin or absent; returns severity-tagged findings with recommendations.
+- catalog_audit_data_product_readiness — per-asset promotion-readiness report.
+  Grades 8 axes (description, ownership, tags, column-doc, upstream/downstream
+  lineage, quality checks, verification) with hardcoded thresholds and returns
+  per-axis pass/warn/fail/na status + actionable gaps + overall readyToPromote
+  flag. Use when a user asks "is this table/dashboard ready to promote?".
+- catalog_resolve_ownership_gaps — for a database/schema/tableIds scope, finds
+  unowned tables and returns per-table evidence bundles (top query authors + 1-hop
+  lineage neighbor owners). Raw signals only, no confidence scores; refuses loudly
+  above 200 unowned tables. Pair with governance_scorecard (size the gap) then
+  this tool (close it).
+- catalog_propagate_metadata — downstream metadata propagation from a source
+  table. Computes a typed diff plan for description / tags / owners axes,
+  returns in dry-run mode by default; non-dry-run requires MCP elicitation
+  confirmation and reports per-axis partial-failure tracking.
 
 TOOLING NOTES
 - All list tools paginate server-side; responses include \`pagination.hasMore\`.
@@ -111,6 +128,9 @@ export function createCoalesceCatalogMcpServer(
     defineGovernanceScorecard(client),
     defineOwnerScorecard(client),
     defineColumnLineage(client),
+    defineAuditDataProductReadiness(client),
+    defineResolveOwnershipGaps(client),
+    definePropagateMetadata(client),
   ];
 
   type RegisterToolHandler = Parameters<McpServer["registerTool"]>[2];

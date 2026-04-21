@@ -407,6 +407,9 @@ Content lives in [`src/resources/context/`](src/resources/context) — edit the 
 - **`catalog_assess_impact`** - Deprecation blast-radius report for a TABLE or DASHBOARD. Walks downstream lineage (depth 1-3, paginated exhaustively per node), batch-enriches every reached asset with ownership + popularity, and returns a 0-100 severity score with per-component rationale. **Completeness contract:** refuses with an explicit error when the depth-2 graph exceeds 2000 distinct nodes (or 500 at depth 3) — never returns a silently truncated report. Surfaces `distinctOwnerTeamCount` (teams to coordinate with) and `unownedCount` (orphaned downstream).
 - **`catalog_governance_scorecard`** - Coverage matrix per database, schema, or explicit `tableIds` list. Per-table flags for ownership / description / column-doc % / tag count, plus an optional 5th axis (`includeQualityCoverage: true` adds quality-check coverage). Aggregate `governanceScore` is popularity-weighted by default (matching Health-dashboard semantics); pass `weighting: 'equal'` for one-table-one-vote audits. Refuses scopes >500 tables.
 - **`catalog_owner_scorecard`** - Per-owner cleanup scorecard. Given an email, enumerates every owned table/dashboard/term and groups them by hygiene issue: thin description, PII/domain-tag coverage, new-asset window, certification, lineage gaps (isolated / upstream-only / downstream-only), and term-specific health (missing owner, orphaned, uncertified). Owned UUIDs that don't resolve as any of table/dashboard/term (columns, queries, deleted refs) are reconciled in `unclassified_owned_ids`. Complete picture or loud refusal — no silent truncation. Pair with the `catalog-daily-guide` prompt for a rendered walkthrough.
+- **`catalog_audit_data_product_readiness`** - Per-asset promotion-readiness report (TABLE or DASHBOARD). Grades eight axes (description, ownership, tags, column-doc coverage, upstream + downstream lineage, quality checks, verification) with hardcoded thresholds and returns per-axis `status: "pass"|"warn"|"fail"|"na"` + raw `signals` + actionable `gaps`. Overall `readyToPromote: true` iff no axes fail (warns allowed). Dashboards report `na` for columnDocs/qualityChecks; wide tables flag `sampled: true` when column inspection caps.
+- **`catalog_resolve_ownership_gaps`** - Given a scope (database, schema, or tableIds), finds unowned tables and gathers per-table *evidence* bundles: top N query authors from the last ~200 queries (grouped by email, sorted by query count) + 1-hop upstream/downstream lineage-neighbor owners. Raw signals only — no confidence scores. Refuses loudly above 200 unowned tables (scope-splitting guidance in the error). Pair with `catalog_governance_scorecard` to size the gap, then this tool to pick owners from the evidence.
+- ✍️ **`catalog_propagate_metadata`** - Propagate description / tags / owners from a source table downstream along lineage. Computes a typed diff plan with per-table per-axis decisions; default `dryRun: true` means nothing mutates. Non-dry-run requires MCP elicitation confirmation (or `COALESCE_CATALOG_SKIP_CONFIRMATIONS=true`). Default axes: `['description']` only; tags/owners are opt-in (owner propagation is high-trust). `overwritePolicy: 'ifEmpty'` (default) or `'overwrite'`. Width caps + pagination ceilings match `catalog_assess_impact`. Per-axis partial-failure tracking in the execution response.
 
 </details>
 
@@ -444,7 +447,7 @@ npm install -g coalesce-catalog-mcp@preview
 
 **2. Register with your MCP client** via one of the [Quick Start](#quick-start) paths.
 
-**3. Restart the client** and try the `/catalog-start-here` prompt (or whatever the slash-command UX is in your client). The agent should list the 4 context resources and 58 tools. If you get an auth error, double-check `COALESCE_CATALOG_API_KEY` has the right scope — READ tokens work on every query tool but mutations require READ_WRITE.
+**3. Restart the client** and try the `/catalog-start-here` prompt (or whatever the slash-command UX is in your client). The agent should list the 5 context resources and 61 tools. If you get an auth error, double-check `COALESCE_CATALOG_API_KEY` has the right scope — READ tokens work on every query tool but mutations require READ_WRITE.
 
 ### Credentials
 
@@ -454,7 +457,7 @@ npm install -g coalesce-catalog-mcp@preview
 | `COALESCE_CATALOG_API_KEY` | Public-API token from the Catalog UI (Settings → API tokens). **Required.** READ tokens work on every query tool; mutations require a READ_WRITE token. | — |
 | `COALESCE_CATALOG_REGION` | Catalog region: `eu` or `us`. Selects the default base URL. | `eu` |
 | `COALESCE_CATALOG_API_URL` | Full base URL override. The path `/public/graphql` is appended automatically. | region-derived |
-| `COALESCE_CATALOG_READ_ONLY` | When `true`, every mutation tool is filtered out at server registration time (58 tools → 35). | `false` |
+| `COALESCE_CATALOG_READ_ONLY` | When `true`, every mutation tool is filtered out at server registration time (61 tools → 37). | `false` |
 <!-- ENV_METADATA_CORE_TABLE_END -->
 
 **Region base URLs:**
@@ -469,7 +472,7 @@ npm install -g coalesce-catalog-mcp@preview
 Two layers keep destructive operations from happening by accident.
 
 - **Tool annotations.** Every tool carries MCP `readOnlyHint` / `destructiveHint` / `idempotentHint`. The ✍️ and ⚠️ markers in [Tools](#tools) track `readOnlyHint: false` and `destructiveHint: true` respectively.
-- **`COALESCE_CATALOG_READ_ONLY=true`** hides all 23 mutation tools at server registration time. Use it for audits, agent sandboxes, or pairing with a prod token. When set, the server registers 35 tools instead of 58.
+- **`COALESCE_CATALOG_READ_ONLY=true`** hides all 24 mutation tools at server registration time. Use it for audits, agent sandboxes, or pairing with a prod token. When set, the server registers 37 tools instead of 61.
 
 Mutation tools additionally require a READ_WRITE API token on the server side — a READ token returns `AuthorizationError` at call time regardless of client config.
 

@@ -1,6 +1,6 @@
 {
   "name": "coalesce-catalog-mcp",
-  "version": "0.5.0-preview.0",
+  "version": "0.6.0-preview.0",
   "mcpName": "io.github.jessemarshall/coalesce-catalog",
   "description": "MCP server for the Coalesce Catalog Public GraphQL API; covers tables, columns, dashboards, lineage, governance, and asset metadata across the warehouse and BI layer.",
   "main": "dist/index.js",
