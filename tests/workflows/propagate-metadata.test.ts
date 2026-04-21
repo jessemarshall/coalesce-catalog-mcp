@@ -389,6 +389,60 @@ describe("catalog_propagate_metadata — dry-run plan (default)", () => {
       teamIds: [],
     });
   });
+
+  it("counts plannedTablesWithMutations as unique tables, not mutation actions", async () => {
+    const source: MockTable = {
+      id: "src",
+      description: "Source description",
+      tagEntities: [{ id: "t1", tag: { label: "pii" } }],
+      ownerEntities: [
+        {
+          id: "o1",
+          userId: "u-alice",
+          user: { email: "alice@a.com", fullName: "Alice" },
+        },
+      ],
+      teamOwnerEntities: [],
+    };
+    const target: MockTable = {
+      id: "tgt",
+      description: null,
+      tagEntities: [],
+      ownerEntities: [],
+      teamOwnerEntities: [],
+    };
+    const client = makeRouter({
+      sourceDetail: source,
+      tablesByIds: new Map([["tgt", target]]),
+      downstreamTableEdges: new Map([["src", ["tgt"]]]),
+    });
+    const tool = definePropagateMetadata(client);
+    const out = parseResult(
+      await tool.handler({
+        sourceTableId: "src",
+        axes: ["description", "tags", "owners"],
+      })
+    );
+
+    const plan = out.plan as Array<{
+      changes: {
+        description?: { action: string };
+        tags?: { action: string };
+        owners?: { action: string };
+      };
+    }>;
+    expect(plan).toHaveLength(1);
+    // All three axes produce "add" mutations on the same table.
+    expect(plan[0].changes.description?.action).toBe("add");
+    expect(plan[0].changes.tags?.action).toBe("add");
+    expect(plan[0].changes.owners?.action).toBe("add");
+
+    const summary = out.summary as {
+      plannedTablesWithMutations: number;
+    };
+    // One table with mutations across 3 axes should count as 1, not 3.
+    expect(summary.plannedTablesWithMutations).toBe(1);
+  });
 });
 
 describe("catalog_propagate_metadata — execution path", () => {
