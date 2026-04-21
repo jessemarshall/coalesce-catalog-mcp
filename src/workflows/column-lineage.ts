@@ -19,6 +19,7 @@ import type {
 } from "../generated/types.js";
 import { withErrorHandling } from "../mcp/tool-helpers.js";
 import { resolveAssetByPath } from "./find-asset-by-path.js";
+import { ENRICHMENT_BATCH_SIZE } from "./shared.js";
 
 // ── Inputs ──────────────────────────────────────────────────────────────────
 
@@ -113,7 +114,6 @@ const FIELD_LINEAGE_PAGE_SIZE = 500;
 const FIELD_LINEAGE_PAGES_PER_NODE_MAX = 40;
 const FANOUT_PARALLELISM = 20;
 const DEFAULT_MAX_NODES = 10000;
-const ENRICHMENT_BATCH_SIZE = 500;
 
 // ── BFS ─────────────────────────────────────────────────────────────────────
 
