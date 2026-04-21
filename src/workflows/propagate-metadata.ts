@@ -228,14 +228,18 @@ function extractTarget(
   };
 }
 
-async function fetchAllDownstreamTableEdges(
+async function fetchAllDownstreamEdges(
   client: CatalogClient,
   parentId: string
-): Promise<string[]> {
-  // Only table→table edges matter for propagation. Dashboards get tracked
-  // separately so callers can see what was skipped, but they're not returned
-  // here because they don't continue the BFS.
+): Promise<{ tableIds: string[]; dashboardCount: number }> {
+  // One unscoped-by-type scan returns both table and dashboard children in
+  // the same pages. We keep tableIds (which continue the BFS) and count
+  // dashboard children (which are summarised as `dashboardsSkipped` for the
+  // caller). Doing this in one scan rather than two halves lineage traffic
+  // at every BFS node — meaningful at depth=2 with hundreds of frontier
+  // nodes.
   const tableIds: string[] = [];
+  let dashboardCount = 0;
   for (let page = 0; page < LINEAGE_PAGES_PER_NODE_MAX; page++) {
     const resp = await client.execute<{ getLineages: GetLineagesOutput }>(
       GET_LINEAGES,
@@ -247,39 +251,15 @@ async function fetchAllDownstreamTableEdges(
     const rows = resp.getLineages.data;
     for (const e of rows) {
       if (e.childTableId) tableIds.push(e.childTableId);
+      else if (e.childDashboardId) dashboardCount += 1;
     }
-    if (rows.length < LINEAGE_PAGE_SIZE) return tableIds;
+    if (rows.length < LINEAGE_PAGE_SIZE) return { tableIds, dashboardCount };
   }
   throw new Error(
     `Lineage pagination exceeded ${LINEAGE_PAGES_PER_NODE_MAX} pages for ` +
       `table ${parentId} (>${LINEAGE_PAGES_PER_NODE_MAX * LINEAGE_PAGE_SIZE} downstream edges). ` +
       `Refusing to produce a partial propagation plan.`
   );
-}
-
-async function fetchDashboardChildCount(
-  client: CatalogClient,
-  parentId: string
-): Promise<number> {
-  // Count only — one probe call per parent. We surface "how many dashboards
-  // would have been skipped" so the caller can decide whether propagation
-  // should be extended to cover them (it won't here; dashboards aren't
-  // writable via this tool).
-  const resp = await client.execute<{ getLineages: GetLineagesOutput }>(
-    GET_LINEAGES,
-    {
-      scope: { parentTableId: parentId, withChildAssetType: "DASHBOARD" },
-      pagination: { nbPerPage: 1, page: 0 },
-    }
-  );
-  const total = resp.getLineages.totalCount;
-  if (typeof total !== "number" || !Number.isFinite(total)) {
-    throw new Error(
-      `getLineages returned non-numeric totalCount (${String(total)}) for ` +
-        `dashboard-child probe of table ${parentId}; cannot reliably count skipped dashboards.`
-    );
-  }
-  return total;
 }
 
 async function traverseDownstreamTables(
@@ -307,29 +287,20 @@ async function traverseDownstreamTables(
       }
     }
 
-    const tableEdgesPerNode: string[][] = [];
-    const dashboardCountsPerNode: number[] = [];
+    const edgesPerNode: Array<{ tableIds: string[]; dashboardCount: number }> =
+      [];
     for (let i = 0; i < frontier.length; i += LINEAGE_FANOUT_PARALLELISM) {
       const slice = frontier.slice(i, i + LINEAGE_FANOUT_PARALLELISM);
       const sliceResults = await Promise.all(
-        slice.map(async (node) => {
-          const [tableEdges, dashCount] = await Promise.all([
-            fetchAllDownstreamTableEdges(client, node),
-            fetchDashboardChildCount(client, node),
-          ]);
-          return { tableEdges, dashCount };
-        })
+        slice.map((node) => fetchAllDownstreamEdges(client, node))
       );
-      for (const r of sliceResults) {
-        tableEdgesPerNode.push(r.tableEdges);
-        dashboardCountsPerNode.push(r.dashCount);
-      }
+      edgesPerNode.push(...sliceResults);
     }
-    for (const c of dashboardCountsPerNode) dashboardsSkipped += c;
 
     const nextFrontier: string[] = [];
-    for (const tableIds of tableEdgesPerNode) {
-      for (const childId of tableIds) {
+    for (const r of edgesPerNode) {
+      dashboardsSkipped += r.dashboardCount;
+      for (const childId of r.tableIds) {
         if (visitedDepths.has(childId)) continue;
         visitedDepths.set(childId, depth);
         nextFrontier.push(childId);
@@ -572,6 +543,14 @@ async function executeDescription(
   // merged display value. If the target later sets descriptionRaw, our
   // external-description write becomes shadowed — acceptable for the "fill
   // in a gap" use case and surfaced in the tool description.
+  if (!source.description) {
+    // planDescription already emits `action: "skip"` when source is empty,
+    // so `pending` below would be empty. Early-return here replaces the
+    // non-null assertion (source.description!) that the map would otherwise
+    // need; the assertion becomes a correctness landmine if future edits
+    // let planDescription produce an add/update row with no source value.
+    return { applied: 0, planned: 0, skipped: true };
+  }
   const pending = plans
     .filter(
       (p) =>
@@ -581,7 +560,7 @@ async function executeDescription(
     )
     .map((p) => ({
       id: p.tableId,
-      externalDescription: source.description!,
+      externalDescription: source.description as string,
     }));
   if (pending.length === 0) {
     return { applied: 0, planned: 0, skipped: true };
@@ -594,7 +573,17 @@ async function executeDescription(
     const resp = await client.execute<{ updateTables: Table[] }>(UPDATE_TABLES, {
       data: batch satisfies UpdateTableInput[],
     });
-    const returned = resp.updateTables?.length ?? 0;
+    if (!Array.isArray(resp.updateTables)) {
+      // Defending against schema drift: a non-array response would otherwise
+      // collapse to `applied = 0` via `?? 0` and silently look like a total
+      // mutation failure, when in reality the client can no longer decode
+      // the API's response shape. Throw so the caller sees isError:true.
+      throw new Error(
+        `updateTables returned a non-array payload (${typeof resp.updateTables}); ` +
+          `cannot verify how many of batch ${i} (${batch.length} rows) were applied.`
+      );
+    }
+    const returned = resp.updateTables.length;
     applied += returned;
     if (returned < batch.length) {
       failures.push({ batch: i, expected: batch.length, returned });
@@ -630,19 +619,29 @@ async function executeTags(
   }
   let successBatches = 0;
   let failedBatches = 0;
+  // Record the exact (entityId, label) pairs in any rejected batch so the
+  // caller can re-issue selectively instead of re-running the entire plan.
+  // Without this, partialFailure: true is indistinguishable from "try
+  // everything again" — which risks flapping a half-failed batch.
+  const failedAttachments: BaseTagEntityInput[] = [];
   const batches = chunk(attach, TAG_ATTACH_BATCH_SIZE);
   for (const batch of batches) {
     const resp = await client.execute<{ attachTags: boolean }>(ATTACH_TAGS, {
       data: batch,
     });
     if (resp.attachTags) successBatches += 1;
-    else failedBatches += 1;
+    else {
+      failedBatches += 1;
+      failedAttachments.push(...batch);
+    }
   }
   const result: Record<string, unknown> = {
-    // ATTACH_TAGS has no per-row result — we only know the whole batch
-    // succeeded or failed. "applied" is attempts-that-the-api-confirmed, so
-    // it may overcount if the server's `true` return value was optimistic.
-    // Surfaced plainly so the caller can decide whether to re-probe.
+    // ATTACH_TAGS returns a single boolean per batch — no per-row result.
+    // We expose `applied: null` (not 0) so a caller comparing `.applied`
+    // across execution axes can tell "unknown" apart from "zero applied."
+    applied: null,
+    appliedReason:
+      "ATTACH_TAGS returns a batch-level boolean; per-row outcomes are not observable. Compare batchesAccepted to batchesTotal for batch-level success, and use failedAttachments to re-issue rejected rows.",
     planned: attach.length,
     batchesTotal: batches.length,
     batchesAccepted: successBatches,
@@ -650,6 +649,7 @@ async function executeTags(
   };
   if (failedBatches > 0) {
     result.partialFailure = true;
+    result.failedAttachments = failedAttachments;
   }
   return result;
 }
@@ -679,21 +679,48 @@ async function executeOwners(
     }
   }
 
-  const userResults = [];
+  // Per-owner try/catch so a single upsert failure doesn't abort the rest
+  // of the batch — half-applied ownership is still useful to the caller as
+  // long as we surface which owners succeeded and which threw. Letting the
+  // first throw propagate would leave earlier attachments landed with no
+  // record of them in the execution response.
+  const userResults: Array<Record<string, unknown>> = [];
+  const userFailures: Array<{ userId: string; error: string }> = [];
   for (const [userId, targets] of userTargets) {
-    const resp = await client.execute<{ upsertUserOwners: OwnerEntity[] }>(
-      UPSERT_USER_OWNERS,
-      { data: { userId, targetEntities: targets } satisfies OwnerInput }
-    );
-    userResults.push(batchResult("upserted", resp.upsertUserOwners, targets.length));
+    try {
+      const resp = await client.execute<{ upsertUserOwners: OwnerEntity[] }>(
+        UPSERT_USER_OWNERS,
+        { data: { userId, targetEntities: targets } satisfies OwnerInput }
+      );
+      userResults.push({
+        userId,
+        ...batchResult("upserted", resp.upsertUserOwners, targets.length),
+      });
+    } catch (err) {
+      userFailures.push({
+        userId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
-  const teamResults = [];
+  const teamResults: Array<Record<string, unknown>> = [];
+  const teamFailures: Array<{ teamId: string; error: string }> = [];
   for (const [teamId, targets] of teamTargets) {
-    const resp = await client.execute<{ upsertTeamOwners: TeamOwnerEntity[] }>(
-      UPSERT_TEAM_OWNERS,
-      { data: { teamId, targetEntities: targets } satisfies TeamOwnerInput }
-    );
-    teamResults.push(batchResult("upserted", resp.upsertTeamOwners, targets.length));
+    try {
+      const resp = await client.execute<{ upsertTeamOwners: TeamOwnerEntity[] }>(
+        UPSERT_TEAM_OWNERS,
+        { data: { teamId, targetEntities: targets } satisfies TeamOwnerInput }
+      );
+      teamResults.push({
+        teamId,
+        ...batchResult("upserted", resp.upsertTeamOwners, targets.length),
+      });
+    } catch (err) {
+      teamFailures.push({
+        teamId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   const plannedUserAttachments = [...userTargets.values()].reduce(
@@ -718,11 +745,15 @@ async function executeOwners(
     byUser: userResults,
     byTeam: teamResults,
   };
-  if (
+  const hasFailure =
+    userFailures.length > 0 ||
+    teamFailures.length > 0 ||
     appliedUserAttachments < plannedUserAttachments ||
-    appliedTeamAttachments < plannedTeamAttachments
-  ) {
+    appliedTeamAttachments < plannedTeamAttachments;
+  if (hasFailure) {
     result.partialFailure = true;
+    if (userFailures.length > 0) result.userFailures = userFailures;
+    if (teamFailures.length > 0) result.teamFailures = teamFailures;
   }
   return result;
 }
@@ -738,14 +769,19 @@ function summarisePlan(
   if (axes.has("owners")) byAxis.owners = { add: 0, update: 0, skip: 0 };
 
   for (const p of plans) {
-    if (p.changes.description) {
-      byAxis.description![p.changes.description.action] += 1;
+    // Guard with the bucket's presence rather than a non-null assertion:
+    // plans may carry a change for an axis the caller didn't request
+    // (future-proofing — computePlan gates on the axes set today, but a
+    // refactor that widened that could silently crash this loop with a
+    // non-null assertion).
+    if (p.changes.description && byAxis.description) {
+      byAxis.description[p.changes.description.action] += 1;
     }
-    if (p.changes.tags) {
-      byAxis.tags![p.changes.tags.action] += 1;
+    if (p.changes.tags && byAxis.tags) {
+      byAxis.tags[p.changes.tags.action] += 1;
     }
-    if (p.changes.owners) {
-      byAxis.owners![p.changes.owners.action] += 1;
+    if (p.changes.owners && byAxis.owners) {
+      byAxis.owners[p.changes.owners.action] += 1;
     }
   }
 
@@ -781,7 +817,6 @@ async function runPropagation(
   const overwritePolicy: OverwritePolicy = args.overwritePolicy ?? "ifEmpty";
   const dryRun = args.dryRun ?? true;
 
-  // 1. Source detail.
   const detailResp = await client.execute<{
     getTables: { data: Record<string, unknown>[] };
   }>(GET_TABLE_DETAIL, { ids: [args.sourceTableId] });
@@ -791,18 +826,15 @@ async function runPropagation(
   }
   const source = extractSource(sourceRow);
 
-  // 2. Traverse downstream tables (with dashboard-child counting).
   const { visitedDepths, dashboardsSkipped } = await traverseDownstreamTables(
     client,
     args.sourceTableId,
     maxDepth
   );
 
-  // Exclude the source itself from the mutation universe.
   const targetIds = [...visitedDepths.keys()].filter(
     (id) => id !== args.sourceTableId
   );
-  // 3. Enrich every reached target.
   const enrichment = await enrichTables(client, targetIds);
   // Completeness contract: every id we reached via lineage must be enriched.
   // Otherwise we'd silently skip a target we reached, producing an
@@ -825,7 +857,6 @@ async function runPropagation(
     (a, b) => a.depth - b.depth || (a.name ?? "").localeCompare(b.name ?? "")
   );
 
-  // 4. Compute the diff plan.
   const plans = computePlan(source, targets, axes, overwritePolicy);
 
   const baseResponse: Record<string, unknown> = {
@@ -855,7 +886,6 @@ async function runPropagation(
     return baseResponse;
   }
 
-  // 5. Execute.
   const execution: Record<string, unknown> = {};
   if (axes.has("description")) {
     execution.description = await executeDescription(client, source, plans);

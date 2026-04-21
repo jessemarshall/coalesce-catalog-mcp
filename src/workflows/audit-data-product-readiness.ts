@@ -382,11 +382,24 @@ function gradeColumnDocs(
   assetKind: AssetKind,
   coverage: ColumnCoverage | null
 ): AxisResult {
-  if (assetKind === "DASHBOARD" || !coverage) {
+  if (assetKind === "DASHBOARD") {
     return {
       name: "columnDocs",
       status: "na",
       signals: { reason: "dashboards have no column-doc signal" },
+      gaps: [],
+    };
+  }
+  if (!coverage) {
+    // Only reachable if the caller excluded columnDocs from `axes` — the
+    // switch in the main handler skips the grade call in that case, so
+    // this branch is defensive. Distinct reason from the DASHBOARD branch
+    // so a misrouted call surfaces the actual misconfiguration instead of
+    // a misleading "dashboards have no…" string.
+    return {
+      name: "columnDocs",
+      status: "na",
+      signals: { reason: "column-doc probe was not requested" },
       gaps: [],
     };
   }

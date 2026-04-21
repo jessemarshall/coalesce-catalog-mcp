@@ -497,7 +497,130 @@ describe("catalog_audit_data_product_readiness — readyToPromote semantics", ()
   });
 });
 
+describe("catalog_audit_data_product_readiness — description fallback surfaces", () => {
+  it("reads the longest of description / descriptionRaw / externalDescription", async () => {
+    // description is empty; externalDescription carries the real text.
+    // The grader should find it via the fallback and grade against its length.
+    const externalDescription =
+      "Imported description from the source system; explains grain, freshness, and the relationship between this table and its upstream staging.";
+    const client = makeRouter({
+      tableDetail: {
+        id: "t",
+        name: "T",
+        description: null,
+        descriptionRaw: null,
+        externalDescription,
+      },
+    });
+    const tool = defineAuditDataProductReadiness(client);
+    const out = parseResult(
+      await tool.handler({
+        assetKind: "TABLE",
+        assetId: "t",
+        axes: ["description"],
+      })
+    );
+    const axis = (out.axes as Array<Record<string, unknown>>)[0];
+    expect(axis.status).toBe("pass");
+    const signals = axis.signals as {
+      length: number;
+      hasDirectDescription: boolean;
+      hasExternalDescription: boolean;
+    };
+    expect(signals.hasDirectDescription).toBe(false);
+    expect(signals.hasExternalDescription).toBe(true);
+    expect(signals.length).toBe(externalDescription.length);
+  });
+
+  it("treats whitespace-only description as empty (fail)", async () => {
+    const client = makeRouter({
+      tableDetail: {
+        id: "t",
+        name: "T",
+        description: "   \n\t  ",
+      },
+    });
+    const tool = defineAuditDataProductReadiness(client);
+    const out = parseResult(
+      await tool.handler({
+        assetKind: "TABLE",
+        assetId: "t",
+        axes: ["description"],
+      })
+    );
+    const axis = (out.axes as Array<Record<string, unknown>>)[0];
+    expect(axis.status).toBe("fail");
+  });
+});
+
+describe("catalog_audit_data_product_readiness — columnDocs edge cases", () => {
+  it("returns status: 'na' when a table has zero columns", async () => {
+    const client = makeRouter({
+      tableDetail: { id: "t", name: "T" },
+      columns: [],
+    });
+    const tool = defineAuditDataProductReadiness(client);
+    const out = parseResult(
+      await tool.handler({
+        assetKind: "TABLE",
+        assetId: "t",
+        axes: ["columnDocs"],
+      })
+    );
+    const axis = (out.axes as Array<Record<string, unknown>>)[0];
+    expect(axis.status).toBe("na");
+    expect(axis.signals).toMatchObject({
+      total: 0,
+      reason: expect.stringMatching(/no columns/),
+    });
+  });
+});
+
 describe("catalog_audit_data_product_readiness — defensive guards", () => {
+  it("throws (isError: true) when getColumns returns a non-numeric totalCount", async () => {
+    // The column probe paginates and checks totalCount between pages when
+    // the first page is full. A non-numeric totalCount should throw rather
+    // than silently stop with an incomplete coverage picture.
+    const client = makeMockClient((document, variables) => {
+      if (document === GET_TABLE_DETAIL) {
+        return { getTables: { data: [{ id: "t", name: "T" }] } };
+      }
+      if (document === GET_COLUMNS_SUMMARY) {
+        const vars = variables as {
+          pagination: { nbPerPage: number; page: number };
+        };
+        // Return a full page so the loop can't short-circuit on short-page.
+        const data = Array.from(
+          { length: vars.pagination.nbPerPage },
+          (_, i) => ({
+            id: `c-${i}`,
+            tableId: "t",
+            name: `col_${i}`,
+            description: "x",
+          })
+        );
+        return {
+          getColumns: {
+            totalCount: null,
+            nbPerPage: vars.pagination.nbPerPage,
+            page: vars.pagination.page,
+            data,
+          },
+        };
+      }
+      return {};
+    });
+    const tool = defineAuditDataProductReadiness(client);
+    const res = await tool.handler({
+      assetKind: "TABLE",
+      assetId: "t",
+      axes: ["columnDocs"],
+      columnSampleCap: 1000,
+    });
+    expect(res.isError).toBe(true);
+    expect(parseResult(res).error).toMatch(/non-numeric totalCount/);
+  });
+
   it("throws (isError: true) when getLineages returns a non-numeric totalCount", async () => {
     const client = makeMockClient((document) => {
       if (document === GET_TABLE_DETAIL) {

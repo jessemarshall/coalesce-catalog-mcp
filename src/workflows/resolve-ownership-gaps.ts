@@ -33,6 +33,11 @@ const NEIGHBOR_PAGES_MAX = 5;
 // Bounded per-table fanout so a 200-table scope doesn't open 200 × 4 =
 // 800 concurrent HTTP requests. Matches assess-impact's convention.
 const EVIDENCE_PARALLELISM = 10;
+// Match assess-impact's ENRICHMENT_BATCH_SIZE so a union of up+down neighbors
+// that exceeds any server-side nbPerPage clamp still gets every row fetched.
+// Completeness is re-verified after enrichment against the traversal set, but
+// chunking here avoids issuing a single oversized request in the first place.
+const ENRICHMENT_BATCH_SIZE = 500;
 
 const ResolveOwnershipGapsInputShape = {
   databaseId: z
@@ -236,7 +241,11 @@ async function fetchQueryAuthors(
   client: CatalogClient,
   tableId: string,
   topN: number
-): Promise<{ authors: QueryAuthorSignal[]; totalQueriesSeen: number }> {
+): Promise<{
+  authors: QueryAuthorSignal[];
+  totalQueriesSeen: number;
+  queriesWithoutAuthor: number;
+}> {
   // One call, up to QUERY_PROBE_SIZE queries. The API sorts by timestamp DESC
   // by default; the probe is "which humans touched this table recently" not
   // "cumulative all-time volume," which is the correct framing for pointing
@@ -253,9 +262,16 @@ async function fetchQueryAuthors(
     queryType?: string | null;
   }>;
   const counts = new Map<string, QueryAuthorSignal>();
+  let queriesWithoutAuthor = 0;
   for (const row of rows) {
     const author = row.author;
-    if (!author || author.trim().length === 0) continue;
+    if (!author || author.trim().length === 0) {
+      // Track the drop explicitly so the caller can distinguish "no human
+      // authors in the recent window" from "service-account writes swamped
+      // the recent window" — different remediation paths.
+      queriesWithoutAuthor += 1;
+      continue;
+    }
     const entry = counts.get(author) ?? {
       author,
       queryCount: 0,
@@ -272,6 +288,7 @@ async function fetchQueryAuthors(
   return {
     authors: sorted.slice(0, topN),
     totalQueriesSeen: rows.length,
+    queriesWithoutAuthor,
   };
 }
 
@@ -307,30 +324,24 @@ async function fetchOneHopNeighborIds(
       const neighborId =
         direction === "downstream"
           ? (e.childTableId ?? e.childDashboardId)
-          : (e.parentTableId ?? e.parentDashboardId);
+          : e.parentTableId;
       if (!neighborId) continue;
       if (seen.has(neighborId)) continue;
       seen.add(neighborId);
+      // Upstream edges against a childTableId scope can only have table
+      // parents (no parent-dashboard-of-a-table edge shape exists in the
+      // API), so upstream is always TABLE. Downstream can be either.
       const kind: "TABLE" | "DASHBOARD" =
-        direction === "downstream"
-          ? e.childTableId
-            ? "TABLE"
-            : "DASHBOARD"
-          : e.parentTableId
-            ? "TABLE"
-            : "DASHBOARD";
+        direction === "upstream" || e.childTableId ? "TABLE" : "DASHBOARD";
       out.push({ id: neighborId, kind });
     }
     if (rows.length < NEIGHBOR_PAGE_SIZE) return out;
-    if (page === NEIGHBOR_PAGES_MAX - 1) {
-      throw new Error(
-        `Lineage pagination exceeded ${NEIGHBOR_PAGES_MAX} pages for ${direction} ` +
-          `of table ${tableId} (>${NEIGHBOR_PAGES_MAX * NEIGHBOR_PAGE_SIZE} edges). ` +
-          `Refusing to produce partial neighbor evidence; investigate the lineage data for this node.`
-      );
-    }
   }
-  return out;
+  throw new Error(
+    `Lineage pagination exceeded ${NEIGHBOR_PAGES_MAX} pages for ${direction} ` +
+      `of table ${tableId} (>${NEIGHBOR_PAGES_MAX * NEIGHBOR_PAGE_SIZE} edges). ` +
+      `Refusing to produce partial neighbor evidence; investigate the lineage data for this node.`
+  );
 }
 
 async function enrichTableNeighbors(
@@ -343,15 +354,18 @@ async function enrichTableNeighbors(
   // but with `owners: []`.
   const map = new Map<string, Record<string, unknown>>();
   if (ids.length === 0) return map;
-  const resp = await client.execute<{ getTables: GetTablesOutput }>(
-    GET_TABLES_DETAIL_BATCH,
-    {
-      scope: { ids },
-      pagination: { nbPerPage: ids.length, page: 0 },
+  for (let i = 0; i < ids.length; i += ENRICHMENT_BATCH_SIZE) {
+    const slice = ids.slice(i, i + ENRICHMENT_BATCH_SIZE);
+    const resp = await client.execute<{ getTables: GetTablesOutput }>(
+      GET_TABLES_DETAIL_BATCH,
+      {
+        scope: { ids: slice },
+        pagination: { nbPerPage: slice.length, page: 0 },
+      }
+    );
+    for (const row of resp.getTables.data) {
+      map.set(row.id, row as unknown as Record<string, unknown>);
     }
-  );
-  for (const row of resp.getTables.data) {
-    map.set(row.id, row as unknown as Record<string, unknown>);
   }
   return map;
 }
@@ -363,6 +377,7 @@ interface EvidenceBundle {
   schemaId: string | null;
   queryAuthors?: {
     totalQueriesSeen: number;
+    queriesWithoutAuthor: number;
     probeCap: number;
     authors: QueryAuthorSignal[];
   };
@@ -404,6 +419,7 @@ async function gatherEvidenceForTable(
       fetchQueryAuthors(client, id, opts.queryAuthorLimit).then((qa) => {
         bundle.queryAuthors = {
           totalQueriesSeen: qa.totalQueriesSeen,
+          queriesWithoutAuthor: qa.queriesWithoutAuthor,
           probeCap: QUERY_PROBE_SIZE,
           authors: qa.authors,
         };

@@ -302,6 +302,7 @@ describe("catalog_resolve_ownership_gaps — happy path", () => {
     const a = rows[0] as {
       queryAuthors: {
         totalQueriesSeen: number;
+        queriesWithoutAuthor: number;
         authors: Array<{
           author: string;
           queryCount: number;
@@ -320,6 +321,10 @@ describe("catalog_resolve_ownership_gaps — happy path", () => {
       }>;
     };
     expect(a.queryAuthors.totalQueriesSeen).toBe(5);
+    // One of the five rows had a null author; the counter separates
+    // "no human authors recently" from "service-account writes swamped
+    // the window" for the caller.
+    expect(a.queryAuthors.queriesWithoutAuthor).toBe(1);
     expect(a.queryAuthors.authors).toEqual([
       {
         author: "alice@example.com",
@@ -377,6 +382,108 @@ describe("catalog_resolve_ownership_gaps — happy path", () => {
     const documents = client.calls.map((c) => c.document);
     // Only the scope fetch should fire — no query/lineage calls.
     expect(documents).toEqual([GET_TABLES_DETAIL_BATCH]);
+  });
+});
+
+describe("catalog_resolve_ownership_gaps — defensive guards", () => {
+  it("throws when getTables returns a non-numeric totalCount", async () => {
+    const client = makeMockClient((document) => {
+      if (document === GET_TABLES_DETAIL_BATCH) {
+        return {
+          getTables: { totalCount: null, nbPerPage: 100, page: 0, data: [] },
+        };
+      }
+      return {};
+    });
+    const tool = defineResolveOwnershipGaps(client);
+    const res = await tool.handler({ schemaId: "s" });
+    expect(res.isError).toBe(true);
+    expect(parseResult(res).error).toMatch(/non-numeric totalCount/);
+  });
+
+  it("throws when pagination returns fewer rows than totalCount claims", async () => {
+    // totalCount says 10 but only 3 are ever returned — partial scan must
+    // be rejected loudly, not silently emit a scorecard for what came back.
+    const tables: MockTable[] = Array.from({ length: 3 }, (_, i) => ({
+      id: `t-${i}`,
+      name: `T${i}`,
+    }));
+    const client = makeRouter({
+      tablesByScope: () => tables,
+      totalTablesOverride: 10,
+    });
+    const tool = defineResolveOwnershipGaps(client);
+    const res = await tool.handler({ schemaId: "s" });
+    expect(res.isError).toBe(true);
+    expect(parseResult(res).error).toMatch(
+      /Table pagination returned 3 rows .* totalCount reported 10/
+    );
+  });
+
+  it("throws when neighbor lineage pagination exceeds its hard ceiling", async () => {
+    const tables: MockTable[] = [
+      {
+        id: "t-orphan",
+        name: "ORPHAN",
+        popularity: 0.5,
+        ownerEntities: [],
+        teamOwnerEntities: [],
+      },
+    ];
+    // Return full pages of unique edges forever — the ceiling at
+    // NEIGHBOR_PAGES_MAX=5 pages of 100 should throw.
+    let nextEdgeId = 0;
+    const client = makeMockClient((document, variables) => {
+      if (document === GET_TABLES_DETAIL_BATCH) {
+        const vars = variables as { scope?: { ids?: string[] } };
+        if (vars.scope?.ids) {
+          // Enrichment — return the requested ids so the completeness
+          // check doesn't trip first.
+          return {
+            getTables: {
+              totalCount: vars.scope.ids.length,
+              nbPerPage: vars.scope.ids.length,
+              page: 0,
+              data: vars.scope.ids.map((id) => ({
+                id,
+                name: id,
+                ownerEntities: [],
+                teamOwnerEntities: [],
+              })),
+            },
+          };
+        }
+        return {
+          getTables: {
+            totalCount: 1,
+            nbPerPage: 100,
+            page: 0,
+            data: tables,
+          },
+        };
+      }
+      if (document === GET_LINEAGES) {
+        // Return 100 full-page edges every time — loop will exhaust.
+        const data = Array.from({ length: 100 }, () => ({
+          id: `e-${nextEdgeId}`,
+          childTableId: `t-n-${nextEdgeId++}`,
+          parentTableId: "t-orphan",
+        }));
+        return {
+          getLineages: { totalCount: 99999, nbPerPage: 100, page: 0, data },
+        };
+      }
+      if (document === GET_TABLE_QUERIES) {
+        return {
+          getTableQueries: { totalCount: 0, nbPerPage: 200, page: 0, data: [] },
+        };
+      }
+      return {};
+    });
+    const tool = defineResolveOwnershipGaps(client);
+    const res = await tool.handler({ schemaId: "s" });
+    expect(res.isError).toBe(true);
+    expect(parseResult(res).error).toMatch(/Lineage pagination exceeded/);
   });
 });
 
