@@ -22,6 +22,7 @@ import type {
   GetUsersOutput,
 } from "../generated/types.js";
 import { withErrorHandling } from "../mcp/tool-helpers.js";
+import { ENRICHMENT_BATCH_SIZE } from "./shared.js";
 
 // ── Input schema ────────────────────────────────────────────────────────────
 
@@ -64,12 +65,10 @@ const USER_LOOKUP_PAGE_SIZE = 500;
 const USER_LOOKUP_MAX_PAGES = 20;
 
 // Asset hydration: owned IDs are heterogeneous (tables/dashboards/terms), so
-// we fan each search out in parallel using the `ids:` scope filter. 500 is
-// the per-call batch ceiling (matches ENRICHMENT_BATCH_SIZE in
-// assess-impact.ts) — owners with >500 owned assets of one type would have
-// silently-truncated responses if we passed the full list in one call, so
-// we chunk client-side and merge.
-const ASSET_HYDRATE_BATCH_SIZE = 500;
+// we fan each search out in parallel using the `ids:` scope filter. Owners
+// with >500 owned assets of one type would have silently-truncated responses
+// if we passed the full list in one call, so we chunk client-side and merge.
+const ASSET_HYDRATE_BATCH_SIZE = ENRICHMENT_BATCH_SIZE;
 
 // Lineage fan-out — one call per (direction × owned table). Same shape as
 // assess-impact: slice the fan-out into parallel batches of N, bounded pages
