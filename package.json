@@ -17,6 +17,7 @@
     "dev": "tsc --watch",
     "codegen": "node scripts/codegen.mjs",
     "smoke": "npm run build && node scripts/smoke-query.mjs",
+    "pretest": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "preversion": "npm run build && npm audit --omit=dev",
