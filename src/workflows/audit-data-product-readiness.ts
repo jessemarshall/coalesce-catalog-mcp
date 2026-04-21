@@ -17,6 +17,7 @@ import type {
   GetQualityChecksOutput,
 } from "../generated/types.js";
 import { withErrorHandling } from "../mcp/tool-helpers.js";
+import { isNonEmptyString, extractOwners } from "./shared.js";
 
 type AssetKind = "TABLE" | "DASHBOARD";
 
@@ -110,40 +111,6 @@ interface ColumnCoverage {
   total: number;
   pct: number;
   sampled: boolean;
-}
-
-function isNonEmptyString(v: unknown): v is string {
-  return typeof v === "string" && v.trim().length > 0;
-}
-
-function extractOwners(row: Record<string, unknown>): {
-  userOwners: Array<{ userId: string | null; email: string | null; fullName: string | null }>;
-  teamOwners: Array<{ teamId: string | null; name: string | null }>;
-} {
-  const userOwners = Array.isArray(row.ownerEntities)
-    ? (row.ownerEntities as Array<Record<string, unknown>>)
-        .filter((o) => o.userId != null)
-        .map((o) => {
-          const u = (o.user as Record<string, unknown> | undefined) ?? {};
-          return {
-            userId: (o.userId as string | null) ?? null,
-            email: (u.email as string | null) ?? null,
-            fullName: (u.fullName as string | null) ?? null,
-          };
-        })
-    : [];
-  const teamOwners = Array.isArray(row.teamOwnerEntities)
-    ? (row.teamOwnerEntities as Array<Record<string, unknown>>)
-        .filter((t) => t.teamId != null)
-        .map((t) => {
-          const team = (t.team as Record<string, unknown> | undefined) ?? {};
-          return {
-            teamId: (t.teamId as string | null) ?? null,
-            name: (team.name as string | null) ?? null,
-          };
-        })
-    : [];
-  return { userOwners, teamOwners };
 }
 
 function extractTags(row: Record<string, unknown>): Array<{ label: string | null }> {

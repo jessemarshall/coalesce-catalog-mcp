@@ -15,6 +15,7 @@ import type {
   GetTablesOutput,
 } from "../generated/types.js";
 import { withErrorHandling } from "../mcp/tool-helpers.js";
+import { hasOwner, ENRICHMENT_BATCH_SIZE } from "./shared.js";
 
 const UNOWNED_HARD_CAP = 200;
 const TABLE_PAGE_SIZE = 100;
@@ -33,11 +34,6 @@ const NEIGHBOR_PAGES_MAX = 5;
 // Bounded per-table fanout so a 200-table scope doesn't open 200 × 4 =
 // 800 concurrent HTTP requests. Matches assess-impact's convention.
 const EVIDENCE_PARALLELISM = 10;
-// Match assess-impact's ENRICHMENT_BATCH_SIZE so a union of up+down neighbors
-// that exceeds any server-side nbPerPage clamp still gets every row fetched.
-// Completeness is re-verified after enrichment against the traversal set, but
-// chunking here avoids issuing a single oversized request in the first place.
-const ENRICHMENT_BATCH_SIZE = 500;
 
 const ResolveOwnershipGapsInputShape = {
   databaseId: z
@@ -120,20 +116,6 @@ function pickScope(args: {
     };
   }
   return null;
-}
-
-function hasOwner(row: Record<string, unknown>): boolean {
-  const userOwners = Array.isArray(row.ownerEntities)
-    ? (row.ownerEntities as Array<Record<string, unknown>>).filter(
-        (o) => o.userId != null
-      ).length
-    : 0;
-  const teamOwners = Array.isArray(row.teamOwnerEntities)
-    ? (row.teamOwnerEntities as Array<Record<string, unknown>>).filter(
-        (t) => t.teamId != null
-      ).length
-    : 0;
-  return userOwners + teamOwners > 0;
 }
 
 interface NeighborOwner {

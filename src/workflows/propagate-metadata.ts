@@ -28,6 +28,13 @@ import type {
 } from "../generated/types.js";
 import { batchResult, withErrorHandling } from "../mcp/tool-helpers.js";
 import { withConfirmation } from "../mcp/confirmation.js";
+import {
+  ENRICHMENT_BATCH_SIZE,
+  isNonEmptyString,
+  extractOwners,
+  chunk,
+  type Owners,
+} from "./shared.js";
 
 type Axis = "description" | "tags" | "owners";
 type OverwritePolicy = "ifEmpty" | "overwrite";
@@ -44,8 +51,6 @@ const WIDTH_CAPS: Record<number, number> = {
 const LINEAGE_PAGE_SIZE = 500;
 const LINEAGE_PAGES_PER_NODE_MAX = 20;
 const LINEAGE_FANOUT_PARALLELISM = 20;
-const ENRICHMENT_BATCH_SIZE = 500;
-
 // Mutation batch sizes. APIs cap each at 500, but the upsert-owners shape
 // is "one userId, many targetEntities" so the fanout there is per-user, not
 // per-target-table. TAG_ATTACH_BATCH_SIZE stays below the API cap to keep
@@ -89,11 +94,6 @@ const PropagateMetadataInputShape = {
       "When true (default), compute the full diff plan and return without executing any mutations. When false, execute the plan — requires interactive confirmation via MCP elicitation (or COALESCE_CATALOG_SKIP_CONFIRMATIONS=true)."
     ),
 };
-
-interface Owners {
-  userOwners: Array<{ userId: string; email: string | null; fullName: string | null }>;
-  teamOwners: Array<{ teamId: string; name: string | null }>;
-}
 
 interface TargetMeta {
   id: string;
@@ -149,37 +149,6 @@ interface TargetPlan {
   };
 }
 
-function isNonEmpty(v: unknown): v is string {
-  return typeof v === "string" && v.trim().length > 0;
-}
-
-function extractOwners(row: Record<string, unknown>): Owners {
-  const userOwners = Array.isArray(row.ownerEntities)
-    ? (row.ownerEntities as Array<Record<string, unknown>>)
-        .filter((o) => o.userId != null)
-        .map((o) => {
-          const u = (o.user as Record<string, unknown> | undefined) ?? {};
-          return {
-            userId: o.userId as string,
-            email: (u.email as string | null) ?? null,
-            fullName: (u.fullName as string | null) ?? null,
-          };
-        })
-    : [];
-  const teamOwners = Array.isArray(row.teamOwnerEntities)
-    ? (row.teamOwnerEntities as Array<Record<string, unknown>>)
-        .filter((t) => t.teamId != null)
-        .map((t) => {
-          const team = (t.team as Record<string, unknown> | undefined) ?? {};
-          return {
-            teamId: t.teamId as string,
-            name: (team.name as string | null) ?? null,
-          };
-        })
-    : [];
-  return { userOwners, teamOwners };
-}
-
 function extractTagLabels(row: Record<string, unknown>): string[] {
   if (!Array.isArray(row.tagEntities)) return [];
   const out: string[] = [];
@@ -197,7 +166,7 @@ function extractSource(row: Record<string, unknown>): SourceMeta {
   // on targets (the only source-style field UPDATE_TABLES exposes), but the
   // "ifEmpty" check on a target reads against `description` so we're
   // deciding against the displayed value, not just the writable field.
-  const description = isNonEmpty(row.description)
+  const description = isNonEmptyString(row.description)
     ? (row.description as string)
     : null;
   return {
@@ -217,10 +186,10 @@ function extractTarget(
     id: row.id as string,
     name: (row.name as string | null) ?? null,
     depth,
-    description: isNonEmpty(row.description)
+    description: isNonEmptyString(row.description)
       ? (row.description as string)
       : null,
-    externalDescription: isNonEmpty(row.externalDescription)
+    externalDescription: isNonEmptyString(row.externalDescription)
       ? (row.externalDescription as string)
       : null,
     tagLabels: extractTagLabels(row),
@@ -527,11 +496,7 @@ function computePlan(
   return plans;
 }
 
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
+
 
 async function executeDescription(
   client: CatalogClient,
