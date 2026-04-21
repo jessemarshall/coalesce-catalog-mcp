@@ -785,17 +785,18 @@ function summarisePlan(
     }
   }
 
-  let mutations = 0;
+  let tablesWithMutations = 0;
   for (const p of plans) {
-    if (p.changes.description?.action === "add") mutations += 1;
-    if (p.changes.description?.action === "update") mutations += 1;
-    if (p.changes.tags?.action === "add") mutations += 1;
-    if (p.changes.owners?.action === "add") mutations += 1;
+    const hasMutation =
+      (p.changes.description?.action === "add" || p.changes.description?.action === "update") ||
+      p.changes.tags?.action === "add" ||
+      p.changes.owners?.action === "add";
+    if (hasMutation) tablesWithMutations += 1;
   }
   return {
     tablesInPlan: plans.length,
     actionsByAxis: byAxis,
-    plannedTablesWithMutations: mutations,
+    plannedTablesWithMutations: tablesWithMutations,
   };
 }
 
