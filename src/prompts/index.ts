@@ -120,6 +120,38 @@ export function registerCatalogPrompts(server: McpServer): void {
   );
 
   server.registerPrompt(
+    "catalog-daily-guide",
+    {
+      title: "Catalog: Daily Owner Cleanup Guide",
+      description:
+        "Given a user email, produce a prioritised 'Today's Agenda' of hygiene issues across that owner's tables, dashboards, and terms — description gaps, lineage coverage, PII/domain tags, certification, term health — with remediation suggestions gated on explicit approval.",
+    },
+    async () => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text:
+              "Call catalog_owner_scorecard with the user's email (and any overrides for domainTagPrefix / newAssetDays / piiTagPattern they've mentioned). The tool returns structured findings per asset type; if it comes back with `notFound: true`, say so plainly — the 10k-user scan ceiling is a real limit, not a retry case.\n\n" +
+              "Render the result as a compact markdown 'Today's Agenda' report. Group by priority:\n" +
+              "  1. **Isolated tables** (lineage_isolated_ids) — these have neither upstream nor downstream edges; usually the highest-signal finding because they may be orphaned imports or missing lineage.\n" +
+              "  2. **Missing owner / uncertified terms** (terms.findings.missing_owner_ids, uncertified_ids) — glossary gaps decay fast.\n" +
+              "  3. **New assets in the last N days** (new_asset_ids) — these need description + domain tag + ownership before they settle into the catalog.\n" +
+              "  4. **Thin descriptions** (thin_description_ids) and **no domain tag** (no_domain_tag_ids) — ongoing hygiene work.\n" +
+              "  5. **PII-tagged assets** (pii_tagged_ids) — surface so the user can sanity-check the tag is still accurate.\n" +
+              "  6. **Upstream-only / downstream-only tables** — likely sources vs. marts; note the shape but don't prescribe action.\n" +
+              "  7. **Orphaned terms** — no linked tag, no attached tags, no outbound pins.\n\n" +
+              "For each ID listed in a finding, resolve the asset name and URL on demand via catalog_get_table / catalog_get_dashboard / catalog_search_terms{ids}. Don't bulk-hydrate every ID up front — only fetch details for the items the user engages with.\n\n" +
+              "If `unclassified_owned_ids` is non-empty, note it at the end of the agenda as a one-liner (\"N owned UUIDs didn't resolve as table/dashboard/term — likely columns, queries, or deleted assets\") rather than rendering the list inline. It's a reconciliation signal, not an action item.\n\n" +
+              "If the user has READ_WRITE access and wants to act on a finding (attach a domain tag, patch a description, certify an asset, assign an owner), propose the specific catalog_* mutation and wait for explicit approval before executing. Never mass-mutate without the user confirming the concrete batch.",
+          },
+        },
+      ],
+    })
+  );
+
+  server.registerPrompt(
     "catalog-audit-documentation",
     {
       title: "Catalog: Audit Documentation Coverage",

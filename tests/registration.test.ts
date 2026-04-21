@@ -14,6 +14,7 @@ import { defineSummarizeAsset } from "../src/workflows/summarize-asset.js";
 import { defineTraceMissingLineage } from "../src/workflows/trace-missing-lineage.js";
 import { defineAssessImpact } from "../src/workflows/assess-impact.js";
 import { defineGovernanceScorecard } from "../src/workflows/governance-scorecard.js";
+import { defineOwnerScorecard } from "../src/workflows/owner-scorecard.js";
 import { defineColumnLineage } from "../src/workflows/column-lineage.js";
 
 const client = createClient({
@@ -38,13 +39,14 @@ function allDefinitions() {
     defineTraceMissingLineage(client),
     defineAssessImpact(client),
     defineGovernanceScorecard(client),
+    defineOwnerScorecard(client),
     defineColumnLineage(client),
   ];
 }
 
 describe("tool registration", () => {
-  it("registers 57 tools across all domains", () => {
-    expect(allDefinitions()).toHaveLength(57);
+  it("registers 58 tools across all domains", () => {
+    expect(allDefinitions()).toHaveLength(58);
   });
 
   it("every tool name starts with 'catalog_'", () => {
@@ -81,14 +83,14 @@ describe("tool registration", () => {
     }
   });
 
-  it("splits roughly 34 read / 23 write", () => {
+  it("splits roughly 35 read / 23 write", () => {
     const reads = allDefinitions().filter(
       (d) => d.config.annotations?.readOnlyHint === true
     );
     const writes = allDefinitions().filter(
       (d) => d.config.annotations?.readOnlyHint !== true
     );
-    expect(reads).toHaveLength(34);
+    expect(reads).toHaveLength(35);
     expect(writes).toHaveLength(23);
   });
 
