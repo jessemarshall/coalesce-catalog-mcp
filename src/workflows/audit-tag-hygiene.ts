@@ -40,11 +40,11 @@ const AuditTagHygieneInputShape = {
   databaseId: z
     .string()
     .optional()
-    .describe("Scope the table/dashboard scan to a specific database UUID."),
+    .describe("Scope the table scan to a specific database UUID. Dashboard scans are always workspace-wide (the GraphQL API has no database/schema scope for dashboards)."),
   schemaId: z
     .string()
     .optional()
-    .describe("Scope the table/dashboard scan to a specific schema UUID."),
+    .describe("Scope the table scan to a specific schema UUID. Dashboard scans are always workspace-wide (the GraphQL API has no database/schema scope for dashboards)."),
   nearDuplicateThreshold: z
     .number()
     .int()
@@ -134,8 +134,10 @@ export function defineAuditTagHygiene(
         "Returns a summary with counts, detailed findings arrays, and a full " +
         "tagUsage roster sorted by total usage DESC. Capacity-gated at 1000 " +
         "tags and 500 assets (tables + dashboards); refuses with an actionable " +
-        "message if limits are exceeded. Scope table/dashboard scans with " +
-        "databaseId or schemaId for large workspaces.",
+        "message if limits are exceeded. Scope table scans with databaseId " +
+        "or schemaId for large workspaces (dashboard scans are always " +
+        "workspace-wide — the GraphQL API has no database/schema scope for " +
+        "dashboards).",
       inputSchema: AuditTagHygieneInputShape,
       annotations: READ_ONLY_ANNOTATIONS,
     },
