@@ -22,6 +22,7 @@ import { defineAuditDataProductReadiness } from "./workflows/audit-data-product-
 import { defineResolveOwnershipGaps } from "./workflows/resolve-ownership-gaps.js";
 import { definePropagateMetadata } from "./workflows/propagate-metadata.js";
 import { defineTriageQualityFailures } from "./workflows/triage-quality-failures.js";
+import { defineAuditTagHygiene } from "./workflows/audit-tag-hygiene.js";
 import { registerCatalogResources } from "./resources/index.js";
 import { registerCatalogPrompts } from "./prompts/index.js";
 import { cleanupStaleSessions } from "./cache/store.js";
@@ -86,7 +87,8 @@ COMPOSED WORKFLOW TOOLS — prefer these over chaining 4-6 primitives:
 - catalog_triage_quality_failures — triage all failing quality checks into a
   prioritised action queue ranked by popularity * failure count, grouped by
   owner, with optional 1-hop upstream lineage pointers for root-cause analysis.
-
+- catalog_audit_tag_hygiene — audit structural health of the tag layer: detects
+  orphaned, unlinked, skewed, and near-duplicate tags across tables and dashboards.
 
 TOOLING NOTES
 - All list tools paginate server-side; responses include \`pagination.hasMore\`.
@@ -137,6 +139,7 @@ export function createCoalesceCatalogMcpServer(
     defineResolveOwnershipGaps(client),
     definePropagateMetadata(client),
     defineTriageQualityFailures(client),
+    defineAuditTagHygiene(client),
   ];
 
   type RegisterToolHandler = Parameters<McpServer["registerTool"]>[2];
