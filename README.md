@@ -452,7 +452,7 @@ npm install -g coalesce-catalog-mcp@preview
 
 **2. Register with your MCP client** via one of the [Quick Start](#quick-start) paths.
 
-**3. Restart the client** and try the `/catalog-start-here` prompt (or whatever the slash-command UX is in your client). The agent should list the 5 context resources and 58 tools. If you get an auth error, double-check `COALESCE_CATALOG_API_KEY` has the right scope — READ tokens work on every query tool but mutations require READ_WRITE.
+**3. Restart the client** and try the `/catalog-start-here` prompt (or whatever the slash-command UX is in your client). The agent should list the 5 context resources and 63 tools. If you get an auth error, double-check `COALESCE_CATALOG_API_KEY` has the right scope — READ tokens work on every query tool but mutations require READ_WRITE.
 
 ### Credentials
 
@@ -462,7 +462,7 @@ npm install -g coalesce-catalog-mcp@preview
 | `COALESCE_CATALOG_API_KEY` | Public-API token from the Catalog UI (Settings → API tokens). **Required.** READ tokens work on every query tool; mutations require a READ_WRITE token. | — |
 | `COALESCE_CATALOG_REGION` | Catalog region: `eu` or `us`. Selects the default base URL. | `eu` |
 | `COALESCE_CATALOG_API_URL` | Full base URL override. The path `/public/graphql` is appended automatically. | region-derived |
-| `COALESCE_CATALOG_READ_ONLY` | When `true`, every mutation tool is filtered out at server registration time (58 tools → 35). | `false` |
+| `COALESCE_CATALOG_READ_ONLY` | When `true`, every mutation tool is filtered out at server registration time (63 tools → 39). | `false` |
 <!-- ENV_METADATA_CORE_TABLE_END -->
 
 **Region base URLs:**
@@ -477,7 +477,7 @@ npm install -g coalesce-catalog-mcp@preview
 Two layers keep destructive operations from happening by accident.
 
 - **Tool annotations.** Every tool carries MCP `readOnlyHint` / `destructiveHint` / `idempotentHint`. The ✍️ and ⚠️ markers in [Tools](#tools) track `readOnlyHint: false` and `destructiveHint: true` respectively.
-- **`COALESCE_CATALOG_READ_ONLY=true`** hides all 23 mutation tools at server registration time. Use it for audits, agent sandboxes, or pairing with a prod token. When set, the server registers 35 tools instead of 58.
+- **`COALESCE_CATALOG_READ_ONLY=true`** hides all 24 mutation tools at server registration time. Use it for audits, agent sandboxes, or pairing with a prod token. When set, the server registers 39 tools instead of 63.
 
 Mutation tools additionally require a READ_WRITE API token on the server side — a READ token returns `AuthorizationError` at call time regardless of client config.
 
