@@ -208,14 +208,19 @@ export function createClient(config: ClientConfig): CatalogClient {
 }
 
 async function readErrorBody(response: Response): Promise<unknown> {
+  // Read the body once as text, then attempt JSON parsing. Reading via
+  // .json() first would consume the body stream — if parsing failed,
+  // the subsequent .text() call would also fail because the stream is
+  // already consumed.
   try {
-    return await response.json();
-  } catch {
+    const text = await response.text();
     try {
-      return await response.text();
+      return JSON.parse(text);
     } catch {
-      return "[response body could not be read]";
+      return text;
     }
+  } catch {
+    return "[response body could not be read]";
   }
 }
 
