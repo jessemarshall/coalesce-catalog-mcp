@@ -16,6 +16,11 @@ import { defineAssessImpact } from "../src/workflows/assess-impact.js";
 import { defineGovernanceScorecard } from "../src/workflows/governance-scorecard.js";
 import { defineOwnerScorecard } from "../src/workflows/owner-scorecard.js";
 import { defineColumnLineage } from "../src/workflows/column-lineage.js";
+import { defineAuditDataProductReadiness } from "../src/workflows/audit-data-product-readiness.js";
+import { defineResolveOwnershipGaps } from "../src/workflows/resolve-ownership-gaps.js";
+import { definePropagateMetadata } from "../src/workflows/propagate-metadata.js";
+import { defineTriageQualityFailures } from "../src/workflows/triage-quality-failures.js";
+import { defineAuditTagHygiene } from "../src/workflows/audit-tag-hygiene.js";
 
 const client = createClient({
   apiKey: "dummy",
@@ -41,12 +46,17 @@ function allDefinitions() {
     defineGovernanceScorecard(client),
     defineOwnerScorecard(client),
     defineColumnLineage(client),
+    defineAuditDataProductReadiness(client),
+    defineResolveOwnershipGaps(client),
+    definePropagateMetadata(client),
+    defineTriageQualityFailures(client),
+    defineAuditTagHygiene(client),
   ];
 }
 
 describe("tool registration", () => {
   it("registers 58 tools across all domains", () => {
-    expect(allDefinitions()).toHaveLength(58);
+    expect(allDefinitions()).toHaveLength(63);
   });
 
   it("every tool name starts with 'catalog_'", () => {
@@ -90,8 +100,8 @@ describe("tool registration", () => {
     const writes = allDefinitions().filter(
       (d) => d.config.annotations?.readOnlyHint !== true
     );
-    expect(reads).toHaveLength(35);
-    expect(writes).toHaveLength(23);
+    expect(reads).toHaveLength(39);
+    expect(writes).toHaveLength(24);
   });
 
   it("destructive writes have destructiveHint=true", () => {
