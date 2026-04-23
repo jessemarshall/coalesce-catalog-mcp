@@ -21,6 +21,7 @@ import { defineColumnLineage } from "./workflows/column-lineage.js";
 import { defineAuditDataProductReadiness } from "./workflows/audit-data-product-readiness.js";
 import { defineResolveOwnershipGaps } from "./workflows/resolve-ownership-gaps.js";
 import { definePropagateMetadata } from "./workflows/propagate-metadata.js";
+import { defineAuditTagHygiene } from "./workflows/audit-tag-hygiene.js";
 import { registerCatalogResources } from "./resources/index.js";
 import { registerCatalogPrompts } from "./prompts/index.js";
 import { cleanupStaleSessions } from "./cache/store.js";
@@ -82,6 +83,11 @@ COMPOSED WORKFLOW TOOLS — prefer these over chaining 4-6 primitives:
   table. Computes a typed diff plan for description / tags / owners axes,
   returns in dry-run mode by default; non-dry-run requires MCP elicitation
   confirmation and reports per-axis partial-failure tracking.
+- catalog_audit_tag_hygiene — structural health audit of the tag layer. Builds
+  a reverse index from table/dashboard tagEntities, detects orphaned tags (zero
+  attachments), unlinked tags (no glossary term), skewed tags (95%+ one entity
+  type), and near-duplicate labels (Levenshtein ≤ 2). Use to audit annotation
+  health before governance rollouts or data product promotions.
 
 TOOLING NOTES
 - All list tools paginate server-side; responses include \`pagination.hasMore\`.
@@ -131,6 +137,7 @@ export function createCoalesceCatalogMcpServer(
     defineAuditDataProductReadiness(client),
     defineResolveOwnershipGaps(client),
     definePropagateMetadata(client),
+    defineAuditTagHygiene(client),
   ];
 
   type RegisterToolHandler = Parameters<McpServer["registerTool"]>[2];
