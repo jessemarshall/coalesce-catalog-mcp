@@ -29,6 +29,7 @@ import {
   USER_LOOKUP_MAX_PAGES,
   USER_PAGE_SIZE,
   type NeighborOwner,
+  type NeighborRef,
   type QueryAuthorSignal,
 } from "./shared.js";
 
@@ -435,17 +436,21 @@ async function gatherTableHandoff(
   };
 }
 
-// Fetch upstream table IDs for a dashboard via the dashboard-child lineage
-// scope. The API only wires table→dashboard edges (no dashboard→dashboard
-// upstream), so every parent here is a TABLE. Paginates exhaustively with
-// the same refuse-on-ceiling contract used by fetchOneHopNeighborIds.
-async function fetchDashboardUpstreamTableIds(
+// Fetch upstream neighbors of a dashboard via the dashboard-child lineage
+// scope. Dashboards can be fed by both parent TABLEs (the common case) and
+// parent DASHBOARDs (embedded-dashboard pattern). We surface both kinds so
+// the candidate-evidence promise in the tool description is honored — table
+// parents contribute owner signal, dashboard parents are surfaced with
+// owners:[] for shape-consistency with how table-handoff neighbors treat
+// dashboards. Paginates exhaustively with the same refuse-on-ceiling
+// contract used by fetchOneHopNeighborIds.
+async function fetchDashboardUpstreamNeighbors(
   client: CatalogClient,
   dashboardId: string,
   opts: { pageSize: number; maxPages: number }
-): Promise<string[]> {
+): Promise<NeighborRef[]> {
   const seen = new Set<string>();
-  const out: string[] = [];
+  const out: NeighborRef[] = [];
   for (let page = 0; page < opts.maxPages; page++) {
     const resp = await client.execute<{ getLineages: GetLineagesOutput }>(
       GET_LINEAGES,
@@ -456,11 +461,12 @@ async function fetchDashboardUpstreamTableIds(
     );
     const rows = resp.getLineages.data;
     for (const e of rows) {
-      const parentId = e.parentTableId;
+      const parentId = e.parentTableId ?? e.parentDashboardId;
       if (!parentId) continue;
       if (seen.has(parentId)) continue;
       seen.add(parentId);
-      out.push(parentId);
+      const kind: "TABLE" | "DASHBOARD" = e.parentTableId ? "TABLE" : "DASHBOARD";
+      out.push({ id: parentId, kind });
     }
     if (rows.length < opts.pageSize) return out;
   }
@@ -495,22 +501,21 @@ async function gatherDashboardHandoff(
   if (opts.includeLineageNeighbors) {
     tasks.push(
       (async () => {
-        const upstreamTableIds = await fetchDashboardUpstreamTableIds(
-          client,
-          id,
-          { pageSize: NEIGHBOR_PAGE_SIZE, maxPages: NEIGHBOR_PAGES_MAX }
-        );
-        if (upstreamTableIds.length === 0) {
-          evidence.upstreamNeighbors = [];
-          evidence.downstreamNeighbors = [];
-          return;
-        }
+        const upstream = await fetchDashboardUpstreamNeighbors(client, id, {
+          pageSize: NEIGHBOR_PAGE_SIZE,
+          maxPages: NEIGHBOR_PAGES_MAX,
+        });
+        const upstreamTableIds = upstream
+          .filter((n) => n.kind === "TABLE")
+          .map((n) => n.id);
         const enrichment = await enrichTableNeighbors(client, [
           ...new Set(upstreamTableIds),
         ]);
         // Same completeness guard as table handoffs — a lineage-reached
-        // parent that doesn't come back from enrichment is a failure, not
-        // a silently-unowned neighbor.
+        // table parent that doesn't come back from enrichment is a
+        // failure, not a silently-unowned neighbor. Dashboard parents
+        // carry owners:[] intentionally (mirrors the table-handoff
+        // treatment of dashboard neighbors).
         const missing = [...new Set(upstreamTableIds)].filter(
           (nid) => !enrichment.has(nid)
         );
@@ -522,11 +527,17 @@ async function gatherDashboardHandoff(
               `Cannot produce complete handoff evidence.`
           );
         }
-        evidence.upstreamNeighbors = upstreamTableIds.map((nid) => ({
-          id: nid,
-          kind: "TABLE",
-          name: (enrichment.get(nid)?.name as string | null) ?? null,
-          owners: extractNeighborOwners(enrichment.get(nid)),
+        evidence.upstreamNeighbors = upstream.map((n) => ({
+          id: n.id,
+          kind: n.kind,
+          name:
+            n.kind === "TABLE"
+              ? ((enrichment.get(n.id)?.name as string | null) ?? null)
+              : null,
+          owners:
+            n.kind === "TABLE"
+              ? extractNeighborOwners(enrichment.get(n.id))
+              : [],
         }));
         // Dashboards don't have downstream TABLE neighbors to surface
         // owner evidence for (downstream is always other dashboards), so
@@ -777,7 +788,7 @@ export function defineReconcileOwnershipHandoff(
         "**Why this seam exists.** `catalog_assess_impact` is single-asset (no batch mode), and `catalog_resolve_ownership_gaps` semantically rejects owned tables (`!hasOwner()` filter). Composing them manually for a departing owner with 30+ assets is 60-80+ sequential calls with complex inter-call state. This tool does it in one call, bounded-concurrent.\n\n" +
         "**Output shape:** `{ identity, asOf, params, scanned: {tablesCount, dashboardsCount, termsCount, unclassified_owned_ids}, handoffQueue: [{ id, kind, name, popularity, downstreamConsumerCount, blastRadiusScore, evidence: { queryAuthors, upstreamNeighbors, downstreamNeighbors }, ... }], terms: [...], candidateSummary: [{ candidateType, userId|teamId, email, name, assetCount, totalBlastRadius, evidenceTypes, teams }] }`. `handoffQueue` is sorted by `blastRadiusScore` DESC (most important first). `candidateSummary` is sorted by `assetCount` DESC (broadest candidate first) then `totalBlastRadius` DESC. Terms are listed but not scored — they have no downstream consumer fan-out.\n\n" +
         "**Term handoff caveat.** Terms appear in `terms[]` for the departing owner but contribute NO candidate evidence to `candidateSummary` — glossary stewardship is not derivable from lineage or query history, so a glossary steward must be picked manually. The asset counts in `candidateSummary` reflect table + dashboard coverage only, never term coverage.\n\n" +
-        "**Dashboard evidence caveat.** Dashboards get upstream-neighbor owner evidence (the tables the dashboard reads from) but no query-author signal — dashboards don't author queries. Candidate coverage for dashboard-heavy portfolios therefore leans on upstream-table owners.\n\n" +
+        "**Dashboard evidence caveat.** Dashboards get upstream-neighbor owner evidence (the tables the dashboard reads from) but no query-author signal — dashboards don't author queries. Parent dashboards (from embedded-dashboard patterns) are surfaced in `upstreamNeighbors` with `owners: []` for shape-consistency, mirroring how table-handoff neighbors treat dashboards. Candidate coverage for dashboard-heavy portfolios therefore leans on upstream-table owners.\n\n" +
         "**Self-exclusion.** The departing owner is filtered from candidate aggregation both by userId (neighbor owners) and by email (query authors), so they never appear as a candidate to take over their own assets.\n\n" +
         "**Differs from `catalog_owner_scorecard`** (grades the hygiene of what a user currently owns — thin descriptions, PII tags, lineage gaps) and **from `catalog_resolve_ownership_gaps`** (finds currently-unowned tables and suggests owners). This tool addresses the TRANSITION moment: assets ARE owned but the owner is departing — who should take each one, prioritized by blast radius?\n\n" +
         "Use for: leaver workflows, role-transition handoffs, and domain-migration reviews where one owner is offboarding a portfolio.",
