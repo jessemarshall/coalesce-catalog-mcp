@@ -89,6 +89,8 @@ interface RouterOpts {
   edgesByKey?: Map<string, MockEdge[]>;
   // keyed as `${dashboardId}|downstream`
   dashboardEdgesByKey?: Map<string, MockEdge[]>;
+  // keyed as `${dashboardId}|upstream` (table parents of a dashboard)
+  dashboardUpstreamEdgesByKey?: Map<string, MockEdge[]>;
   queriesByTableId?: Map<string, MockQuery[]>;
 }
 
@@ -172,6 +174,7 @@ function makeRouter(opts: RouterOpts) {
           parentTableId?: string;
           childTableId?: string;
           parentDashboardId?: string;
+          childDashboardId?: string;
         };
         pagination: { nbPerPage: number; page: number };
       };
@@ -179,6 +182,20 @@ function makeRouter(opts: RouterOpts) {
         const edges =
           opts.dashboardEdgesByKey?.get(
             `${vars.scope.parentDashboardId}|downstream`
+          ) ?? [];
+        return {
+          getLineages: {
+            totalCount: edges.length,
+            nbPerPage: vars.pagination.nbPerPage,
+            page: vars.pagination.page,
+            data: edges,
+          },
+        };
+      }
+      if (vars.scope?.childDashboardId) {
+        const edges =
+          opts.dashboardUpstreamEdgesByKey?.get(
+            `${vars.scope.childDashboardId}|upstream`
           ) ?? [];
         return {
           getLineages: {
@@ -747,6 +764,215 @@ describe("catalog_reconcile_ownership_handoff — defensive guards", () => {
     expect(parseResult(res).error).toMatch(
       /Lineage pagination exceeded 20 pages/
     );
+  });
+});
+
+// ── Self-exclusion by email (fix: departing owner not a candidate) ──────────
+
+describe("catalog_reconcile_ownership_handoff — self-exclusion", () => {
+  it("filters the departing owner's email out of query-author candidates", async () => {
+    const ada: MockUser = {
+      id: "u-ada",
+      firstName: "Ada",
+      lastName: "L",
+      email: "Ada@Example.com",
+      role: "MEMBER",
+      ownedAssetIds: ["tbl-1"],
+    };
+    const tables: MockTable[] = [
+      { id: "tbl-1", name: "T", popularity: 0.1, numberOfQueries: 10 },
+    ];
+    // Ada is the #1 query author on her own table; a few other emails
+    // appear too so we can verify those still show up.
+    const queriesByTableId = new Map<string, MockQuery[]>([
+      [
+        "tbl-1",
+        [
+          // Case-mismatch on purpose — filter is case-insensitive
+          { author: "ada@example.com", queryType: "SELECT" },
+          { author: "ada@example.com", queryType: "SELECT" },
+          { author: "ada@example.com", queryType: "SELECT" },
+          { author: "eve@example.com", queryType: "SELECT" },
+          { author: "dan@example.com", queryType: "WRITE" },
+        ],
+      ],
+    ]);
+    const client = makeRouter({
+      users: [ada],
+      tables,
+      dashboards: [],
+      terms: [],
+      teams: [],
+      queriesByTableId,
+    });
+    const tool = defineReconcileOwnershipHandoff(client);
+    const out = parseResult(
+      await tool.handler({
+        email: "ada@example.com",
+        includeLineageNeighbors: false,
+      })
+    );
+    const candidates = out.candidateSummary as Array<Record<string, unknown>>;
+    const userIds = candidates
+      .filter((c) => c.candidateType === "user")
+      .map((c) => c.userId as string);
+    // Ada must NOT appear (filtered by email self-exclusion)
+    expect(userIds).not.toContain("email:ada@example.com");
+    // Other authors must still appear
+    expect(userIds).toContain("email:eve@example.com");
+    expect(userIds).toContain("email:dan@example.com");
+  });
+});
+
+// ── Dashboard upstream evidence (fix: dashboards contribute candidates) ─────
+
+describe("catalog_reconcile_ownership_handoff — dashboard upstream evidence", () => {
+  it("surfaces owners of upstream tables as candidates for a dashboard handoff", async () => {
+    const ada: MockUser = {
+      id: "u-ada",
+      firstName: "Ada",
+      lastName: "L",
+      email: "ada@example.com",
+      role: "MEMBER",
+      // Dashboard-only portfolio so this test isolates the dashboard path
+      ownedAssetIds: ["dash-1"],
+    };
+    const carol: MockUser = {
+      id: "u-carol",
+      firstName: "Carol",
+      lastName: "Q",
+      email: "carol@example.com",
+      role: "MEMBER",
+      ownedAssetIds: [],
+    };
+    const dashboards: MockDashboard[] = [
+      { id: "dash-1", name: "Revenue", popularity: 0.7 },
+    ];
+    // dash-1's upstream table is tbl-up, owned by Carol.
+    const dashboardUpstreamEdgesByKey = new Map<string, MockEdge[]>([
+      [
+        "dash-1|upstream",
+        [{ id: "l1", parentTableId: "tbl-up", childDashboardId: "dash-1" }],
+      ],
+    ]);
+    const tablesAugmented: MockTable[] = [
+      {
+        id: "tbl-up",
+        name: "UPSTREAM_TABLE",
+        ownerEntities: [
+          {
+            id: "oe-carol",
+            userId: "u-carol",
+            user: {
+              id: "u-carol",
+              email: "carol@example.com",
+              fullName: "Carol Q",
+            },
+          },
+        ],
+        teamOwnerEntities: [],
+      },
+    ];
+    const client = makeRouter({
+      users: [ada, carol],
+      tables: tablesAugmented,
+      dashboards,
+      terms: [],
+      teams: [],
+      dashboardUpstreamEdgesByKey,
+    });
+    const tool = defineReconcileOwnershipHandoff(client);
+    const out = parseResult(
+      await tool.handler({
+        email: "ada@example.com",
+        includeQueryAuthors: false,
+        includeTeamContext: false,
+      })
+    );
+    const queue = out.handoffQueue as Array<Record<string, unknown>>;
+    expect(queue).toHaveLength(1);
+    expect(queue[0].id).toBe("dash-1");
+    const evidence = queue[0].evidence as Record<string, unknown>;
+    const upstream = evidence.upstreamNeighbors as Array<
+      Record<string, unknown>
+    >;
+    expect(upstream).toHaveLength(1);
+    expect(upstream[0].id).toBe("tbl-up");
+    const upOwners = upstream[0].owners as Array<Record<string, unknown>>;
+    expect(upOwners).toHaveLength(1);
+    expect(upOwners[0].userId).toBe("u-carol");
+    // And Carol shows up in candidateSummary via the dashboard's upstream path
+    const candidates = out.candidateSummary as Array<Record<string, unknown>>;
+    const carolCand = candidates.find(
+      (c) => c.candidateType === "user" && c.userId === "u-carol"
+    );
+    expect(carolCand).toBeDefined();
+    const evidenceTypes = carolCand!.evidenceTypes as Record<string, number>;
+    expect(evidenceTypes.upstreamNeighbor).toBe(1);
+  });
+
+  it("refuses when a dashboard's upstream table is missing from enrichment", async () => {
+    const ada: MockUser = {
+      id: "u-ada",
+      firstName: "A",
+      lastName: "L",
+      email: "ada@example.com",
+      role: "MEMBER",
+      ownedAssetIds: ["dash-orphan"],
+    };
+    const dashboards: MockDashboard[] = [
+      { id: "dash-orphan", name: "Orphan", popularity: 0.1 },
+    ];
+    const dashboardUpstreamEdgesByKey = new Map<string, MockEdge[]>([
+      [
+        "dash-orphan|upstream",
+        [
+          {
+            id: "l",
+            parentTableId: "tbl-missing",
+            childDashboardId: "dash-orphan",
+          },
+        ],
+      ],
+    ]);
+    // tbl-missing is NOT present in `tables`
+    const client = makeRouter({
+      users: [ada],
+      tables: [],
+      dashboards,
+      terms: [],
+      teams: [],
+      dashboardUpstreamEdgesByKey,
+    });
+    const tool = defineReconcileOwnershipHandoff(client);
+    const res = await tool.handler({
+      email: "ada@example.com",
+      includeQueryAuthors: false,
+      includeTeamContext: false,
+    });
+    expect(res.isError).toBe(true);
+    expect(parseResult(res).error).toMatch(
+      /Neighbor enrichment returned no row/
+    );
+    expect(parseResult(res).error).toMatch(/upstream of dashboard dash-orphan/);
+  });
+});
+
+// ── Description promises ────────────────────────────────────────────────────
+
+describe("catalog_reconcile_ownership_handoff — description promises", () => {
+  it("discloses that terms contribute no candidate evidence", () => {
+    const desc = findTool().config.description;
+    expect(desc).toMatch(/term/i);
+    expect(desc).toMatch(/no candidate evidence|picked manually/i);
+  });
+  it("discloses the departing owner's self-exclusion", () => {
+    const desc = findTool().config.description;
+    expect(desc).toMatch(/self-exclusion|departing owner is filtered/i);
+  });
+  it("discloses that dashboards have no query-author signal", () => {
+    const desc = findTool().config.description;
+    expect(desc).toMatch(/dashboards? don't author queries|no query-author/i);
   });
 });
 
