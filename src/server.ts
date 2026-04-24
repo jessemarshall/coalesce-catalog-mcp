@@ -20,6 +20,7 @@ import { defineOwnerScorecard } from "./workflows/owner-scorecard.js";
 import { defineColumnLineage } from "./workflows/column-lineage.js";
 import { defineAuditDataProductReadiness } from "./workflows/audit-data-product-readiness.js";
 import { defineResolveOwnershipGaps } from "./workflows/resolve-ownership-gaps.js";
+import { defineReconcileOwnershipHandoff } from "./workflows/reconcile-ownership-handoff.js";
 import { definePropagateMetadata } from "./workflows/propagate-metadata.js";
 import { defineTriageQualityFailures } from "./workflows/triage-quality-failures.js";
 import { defineAuditTagHygiene } from "./workflows/audit-tag-hygiene.js";
@@ -80,6 +81,11 @@ COMPOSED WORKFLOW TOOLS — prefer these over chaining 4-6 primitives:
   lineage neighbor owners). Raw signals only, no confidence scores; refuses loudly
   above 200 unowned tables. Pair with governance_scorecard (size the gap) then
   this tool (close it).
+- catalog_reconcile_ownership_handoff — for a departing owner (by email), builds
+  a blast-radius-ranked handoff plan: enumerates every owned table/dashboard/term,
+  scores each asset (popularity x downstream consumer count x query volume), gathers
+  candidate-owner evidence (query authors, 1-hop neighbor owners, team membership),
+  and aggregates candidates into a ranked summary. Refuses above 200 owned assets.
 - catalog_propagate_metadata — downstream metadata propagation from a source
   table. Computes a typed diff plan for description / tags / owners axes,
   returns in dry-run mode by default; non-dry-run requires MCP elicitation
@@ -137,6 +143,7 @@ export function createCoalesceCatalogMcpServer(
     defineColumnLineage(client),
     defineAuditDataProductReadiness(client),
     defineResolveOwnershipGaps(client),
+    defineReconcileOwnershipHandoff(client),
     definePropagateMetadata(client),
     defineTriageQualityFailures(client),
     defineAuditTagHygiene(client),

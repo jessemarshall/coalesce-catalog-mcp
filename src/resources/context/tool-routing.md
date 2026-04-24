@@ -128,6 +128,14 @@ Tags and owners are opt-in per-call (owner propagation is high-trust; don't defa
 
 Returns structured ID lists per category, sorted newest-first by `createdAt DESC`. Complete picture or explicit refusal — no silent truncation. For a rendered walkthrough with remediation prompts, invoke the `catalog-daily-guide` prompt instead of calling the tool directly.
 
+## "So-and-so is leaving — plan how to hand off their stuff"
+
+→ `catalog_reconcile_ownership_handoff({ email })` — departing-owner workflow. Enumerates every asset the user owns, scores each by `blastRadiusScore` (popularity × downstream consumer count × query volume), and gathers per-asset candidate-owner evidence (top query authors, 1-hop upstream/downstream neighbor owners). One paginated `getTeams` call tags each candidate with their team memberships. Aggregates across the whole portfolio into `candidateSummary[]` sorted by assets-covered DESC.
+
+Capacity gate: 200 owned assets (larger portfolios are bulk reassignments, not per-asset handoffs — split by domain/schema). Distinct from `catalog_owner_scorecard` (grades hygiene of what's owned) and `catalog_resolve_ownership_gaps` (finds currently-unowned tables). Use when the trigger is "this person is leaving / changing roles," not "this asset has no owner."
+
+Act on the plan via `catalog_upsert_user_owners` / `catalog_upsert_team_owners`, typically starting with the top-asset-count candidate.
+
 ## AI assistant (async)
 
 1. `catalog_ask_assistant` — submits a question, returns a jobId.
