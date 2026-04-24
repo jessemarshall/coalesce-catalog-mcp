@@ -33,7 +33,7 @@ import {
   NullsPrioritySchema,
   SortDirectionSchema,
 } from "../schemas/sorting.js";
-import { listEnvelope, withErrorHandling } from "./tool-helpers.js";
+import { batchResult, listEnvelope, withErrorHandling } from "./tool-helpers.js";
 
 // ── Column search ───────────────────────────────────────────────────────────
 
@@ -371,10 +371,7 @@ export function defineColumnTools(
           UPDATE_COLUMNS_METADATA,
           { data: input }
         );
-        return {
-          updated: data.updateColumnsMetadata.length,
-          data: data.updateColumnsMetadata,
-        };
+        return batchResult("updated", data.updateColumnsMetadata, input.length);
       }, client),
     },
   ];

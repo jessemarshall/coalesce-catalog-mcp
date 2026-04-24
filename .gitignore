@@ -7,4 +7,5 @@ dist/
 coverage/
 .tsbuildinfo
 docs/RELEASES.md
+docs/private-api-reference.md
 CLAUDE.md
