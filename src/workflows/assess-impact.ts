@@ -19,6 +19,7 @@ import type {
   GetTablesOutput,
 } from "../generated/types.js";
 import { withErrorHandling } from "../mcp/tool-helpers.js";
+import { ENRICHMENT_BATCH_SIZE } from "./shared.js";
 
 type AssetKind = "TABLE" | "DASHBOARD";
 
@@ -53,7 +54,6 @@ const WIDTH_CAPS: Record<number, number> = {
   3: 500,
 };
 
-const ENRICHMENT_BATCH_SIZE = 500;
 // Bound per-depth fanout so a 2000-node frontier doesn't open 2000 concurrent
 // HTTP requests. Matches the scorecard's QUALITY_PARALLELISM convention.
 const LINEAGE_FANOUT_PARALLELISM = 20;

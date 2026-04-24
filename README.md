@@ -343,7 +343,10 @@ Content lives in [`src/resources/context/`](src/resources/context) — edit the 
 **Read**
 
 - **`catalog_search_users`** - List Catalog users (id, email, role, `ownedAssetCount`). Set `projection: "detailed"` to inline `ownedAssetIds` and resolve email → owned assets in one scan.
+- **`catalog_get_user_owned_assets`** - Paginated list of asset UUIDs owned by a user (by `userId`). Scans up to 10k users internally. Prefer `catalog_search_users({ projection: "detailed" })` when starting from an email.
 - **`catalog_search_teams`** - List teams (members, Slack routing, `memberCount`, `ownedAssetCount`). Set `projection: "detailed"` to inline `memberIds` + `ownedAssetIds`.
+- **`catalog_get_team_members`** - Paginated list of user UUIDs belonging to a team (by `teamId`). Scans up to 10k teams internally. Prefer `catalog_search_teams({ projection: "detailed" })` when starting from a team name.
+- **`catalog_get_team_owned_assets`** - Paginated list of asset UUIDs owned by a team (by `teamId`). Same scan strategy as `catalog_get_team_members`.
 - **`catalog_search_quality_checks`** - Data-quality test results (dbt, Monte Carlo, Soda, Great Expectations, etc.). Scope by `tableId`.
 - **`catalog_search_pinned_assets`** - Curated "see also" links between catalog entities.
 
@@ -410,6 +413,8 @@ Content lives in [`src/resources/context/`](src/resources/context) — edit the 
 - **`catalog_audit_data_product_readiness`** - Per-asset promotion-readiness report (TABLE or DASHBOARD). Grades eight axes (description, ownership, tags, column-doc coverage, upstream + downstream lineage, quality checks, verification) with hardcoded thresholds and returns per-axis `status: "pass"|"warn"|"fail"|"na"` + raw `signals` + actionable `gaps`. Overall `readyToPromote: true` iff no axes fail (warns allowed). Dashboards report `na` for columnDocs/qualityChecks; wide tables flag `sampled: true` when column inspection caps.
 - **`catalog_resolve_ownership_gaps`** - Given a scope (database, schema, or tableIds), finds unowned tables and gathers per-table *evidence* bundles: top N query authors from the last ~200 queries (grouped by email, sorted by query count) + 1-hop upstream/downstream lineage-neighbor owners. Raw signals only — no confidence scores. Refuses loudly above 200 unowned tables (scope-splitting guidance in the error). Pair with `catalog_governance_scorecard` to size the gap, then this tool to pick owners from the evidence.
 - ✍️ **`catalog_propagate_metadata`** - Propagate description / tags / owners from a source table downstream along lineage. Computes a typed diff plan with per-table per-axis decisions; default `dryRun: true` means nothing mutates. Non-dry-run requires MCP elicitation confirmation (or `COALESCE_CATALOG_SKIP_CONFIRMATIONS=true`). Default axes: `['description']` only; tags/owners are opt-in (owner propagation is high-trust). `overwritePolicy: 'ifEmpty'` (default) or `'overwrite'`. Width caps + pagination ceilings match `catalog_assess_impact`. Per-axis partial-failure tracking in the execution response.
+- **`catalog_triage_quality_failures`** - Triage all failing quality checks (ALERT + WARNING) into a prioritised action queue. Composes paginated quality-check fetch + client-side status filter (GraphQL scope has no status field) + table detail batch enrichment (ownership, popularity) + optional 1-hop upstream lineage fan-out for root-cause pointers. Ranked by `popularity × failureCount` DESC with per-owner grouping (`byOwner` keyed by email, `__unowned__` for orphans). Capacity-gated at 500 failing checks; refuses with an actionable message above that threshold.
+- **`catalog_audit_tag_hygiene`** - Audit structural health of the tag layer. Composes GET_TAGS (paginated) + GET_TABLES_DETAIL_BATCH + GET_DASHBOARDS_DETAIL_BATCH to build a reverse tag-usage index, then detects four finding classes: orphaned (zero usage), unlinked (in use but no glossary term), skewed (>80% single entity type with ≥5 uses), and near-duplicates (Levenshtein distance, configurable threshold). Capacity-gated at 1000 tags / 500 assets. Table scans can be scoped via `databaseId`/`schemaId`; dashboard scans are always workspace-wide (GraphQL API limitation).
 
 </details>
 
@@ -447,7 +452,7 @@ npm install -g coalesce-catalog-mcp@preview
 
 **2. Register with your MCP client** via one of the [Quick Start](#quick-start) paths.
 
-**3. Restart the client** and try the `/catalog-start-here` prompt (or whatever the slash-command UX is in your client). The agent should list the 5 context resources and 61 tools. If you get an auth error, double-check `COALESCE_CATALOG_API_KEY` has the right scope — READ tokens work on every query tool but mutations require READ_WRITE.
+**3. Restart the client** and try the `/catalog-start-here` prompt (or whatever the slash-command UX is in your client). The agent should list the 5 context resources and 63 tools. If you get an auth error, double-check `COALESCE_CATALOG_API_KEY` has the right scope — READ tokens work on every query tool but mutations require READ_WRITE.
 
 ### Credentials
 
@@ -457,7 +462,7 @@ npm install -g coalesce-catalog-mcp@preview
 | `COALESCE_CATALOG_API_KEY` | Public-API token from the Catalog UI (Settings → API tokens). **Required.** READ tokens work on every query tool; mutations require a READ_WRITE token. | — |
 | `COALESCE_CATALOG_REGION` | Catalog region: `eu` or `us`. Selects the default base URL. | `eu` |
 | `COALESCE_CATALOG_API_URL` | Full base URL override. The path `/public/graphql` is appended automatically. | region-derived |
-| `COALESCE_CATALOG_READ_ONLY` | When `true`, every mutation tool is filtered out at server registration time (61 tools → 37). | `false` |
+| `COALESCE_CATALOG_READ_ONLY` | When `true`, every mutation tool is filtered out at server registration time (63 tools → 39). | `false` |
 <!-- ENV_METADATA_CORE_TABLE_END -->
 
 **Region base URLs:**
@@ -472,7 +477,7 @@ npm install -g coalesce-catalog-mcp@preview
 Two layers keep destructive operations from happening by accident.
 
 - **Tool annotations.** Every tool carries MCP `readOnlyHint` / `destructiveHint` / `idempotentHint`. The ✍️ and ⚠️ markers in [Tools](#tools) track `readOnlyHint: false` and `destructiveHint: true` respectively.
-- **`COALESCE_CATALOG_READ_ONLY=true`** hides all 24 mutation tools at server registration time. Use it for audits, agent sandboxes, or pairing with a prod token. When set, the server registers 37 tools instead of 61.
+- **`COALESCE_CATALOG_READ_ONLY=true`** hides all 24 mutation tools at server registration time. Use it for audits, agent sandboxes, or pairing with a prod token. When set, the server registers 39 tools instead of 63.
 
 Mutation tools additionally require a READ_WRITE API token on the server side — a READ token returns `AuthorizationError` at call time regardless of client config.
 

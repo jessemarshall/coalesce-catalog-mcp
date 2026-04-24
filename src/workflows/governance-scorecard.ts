@@ -15,6 +15,7 @@ import type {
   GetTablesOutput,
 } from "../generated/types.js";
 import { withErrorHandling } from "../mcp/tool-helpers.js";
+import { hasOwner, isNonEmptyString, chunk } from "./shared.js";
 
 const ScorecardInputShape = {
   databaseId: z
@@ -145,33 +146,6 @@ function pickScope(args: {
     };
   }
   return null;
-}
-
-function hasOwner(row: Record<string, unknown>): boolean {
-  // Filter out owner entities whose userId/teamId is null — the binding row
-  // exists but doesn't actually point at a user/team. For governance audit
-  // purposes that's functionally unowned, not silently owned.
-  const userOwners = Array.isArray(row.ownerEntities)
-    ? (row.ownerEntities as Array<Record<string, unknown>>).filter(
-        (o) => o.userId != null
-      ).length
-    : 0;
-  const teamOwners = Array.isArray(row.teamOwnerEntities)
-    ? (row.teamOwnerEntities as Array<Record<string, unknown>>).filter(
-        (t) => t.teamId != null
-      ).length
-    : 0;
-  return userOwners + teamOwners > 0;
-}
-
-function isNonEmptyString(v: unknown): boolean {
-  return typeof v === "string" && v.trim().length > 0;
-}
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
 }
 
 async function fetchColumnsForTableBatch(

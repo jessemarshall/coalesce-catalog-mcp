@@ -87,20 +87,6 @@ export function batchResult<T>(
 }
 
 /**
- * Normalise a list-query GraphQL output into a uniform envelope for MCP
- * responses. Callers provide the raw data array and pagination metadata;
- * the envelope surfaces `hasMore` so the LLM can decide whether to paginate.
- *
- * When `totalCount` is `null` (the GraphQL endpoint doesn't return it),
- * `hasMore` is inferred from whether the page is full, and `totalCount`
- * is omitted from the output to avoid misleading the agent.
- *
- * Note: when `totalCount` is null and the last page happens to contain
- * exactly `nbPerPage` items, `hasMore` will be `true` — the agent will
- * fetch one more (empty) page. This is the correct heuristic when the
- * server provides no count; the alternative (under-fetching) is worse.
- */
-/**
  * Wrap a tool handler so any non-error response whose serialised text exceeds
  * the externalization threshold gets written to the session cache and
  * replaced with a small `{ externalized, resourceUri, ... }` pointer. Error
@@ -138,6 +124,20 @@ export function withResponseExternalization(
   };
 }
 
+/**
+ * Normalise a list-query GraphQL output into a uniform envelope for MCP
+ * responses. Callers provide the raw data array and pagination metadata;
+ * the envelope surfaces `hasMore` so the LLM can decide whether to paginate.
+ *
+ * When `totalCount` is `null` (the GraphQL endpoint doesn't return it),
+ * `hasMore` is inferred from whether the page is full, and `totalCount`
+ * is omitted from the output to avoid misleading the agent.
+ *
+ * Note: when `totalCount` is null and the last page happens to contain
+ * exactly `nbPerPage` items, `hasMore` will be `true` — the agent will
+ * fetch one more (empty) page. This is the correct heuristic when the
+ * server provides no count; the alternative (under-fetching) is worse.
+ */
 export function listEnvelope<T>(
   page: number,
   nbPerPage: number,
