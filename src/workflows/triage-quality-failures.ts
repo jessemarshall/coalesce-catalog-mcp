@@ -14,6 +14,7 @@ import type {
   GetQualityChecksOutput,
   GetTablesOutput,
   GetLineagesOutput,
+  Table,
 } from "../generated/types.js";
 import { withErrorHandling } from "../mcp/tool-helpers.js";
 import {
@@ -66,7 +67,7 @@ interface FailingCheck {
   status: string;
   result: string | null;
   externalId: string;
-  runAt: string | null;
+  runAt: number | null;
   url: string | null;
   tableId: string;
 }
@@ -85,7 +86,7 @@ interface TriageQueueEntry {
     status: string;
     result: string | null;
     externalId: string;
-    runAt: string | null;
+    runAt: number | null;
     url: string | null;
   }>;
   upstreamPointers?: Array<{
@@ -117,20 +118,17 @@ async function fetchAllFailingChecks(
       pagination: { nbPerPage: QUALITY_PAGE_SIZE, page },
     });
 
-    for (const row of resp.getDataQualities.data as Array<
-      Record<string, unknown>
-    >) {
-      const status = row.status as string;
-      if (statusSet.has(status)) {
+    for (const row of resp.getDataQualities.data) {
+      if (statusSet.has(row.status)) {
         failing.push({
-          id: row.id as string,
-          name: row.name as string,
-          status,
-          result: (row.result as string | null) ?? null,
-          externalId: row.externalId as string,
-          runAt: (row.runAt as string | null) ?? null,
-          url: (row.url as string | null) ?? null,
-          tableId: row.tableId as string,
+          id: row.id,
+          name: row.name,
+          status: row.status,
+          result: row.result ?? null,
+          externalId: row.externalId,
+          runAt: row.runAt ?? null,
+          url: row.url ?? null,
+          tableId: row.tableId,
         });
       }
     }
@@ -198,8 +196,8 @@ async function hydrateTableNames(
         pagination: { nbPerPage: batch.length, page: 0 },
       }
     );
-    for (const row of resp.getTables.data as Array<Record<string, unknown>>) {
-      names.set(row.id as string, (row.name as string | null) ?? null);
+    for (const row of resp.getTables.data) {
+      names.set(row.id, row.name ?? null);
     }
   }
   return names;
@@ -247,7 +245,7 @@ export function defineTriageQualityFailures(
       if (failing.length === 0) {
         return {
           summary: {
-            totalChecks: 0,
+            matchedChecks: 0,
             failingChecks: 0,
             affectedTables: 0,
             totalOwners: 0,
@@ -271,7 +269,7 @@ export function defineTriageQualityFailures(
       const affectedTableIds = Array.from(failuresByTable.keys());
 
       // Step 5: Batch-fetch table details for owner/popularity/name
-      const tableDetails = new Map<string, Record<string, unknown>>();
+      const tableDetails = new Map<string, Table>();
       const tableBatches = chunk(affectedTableIds, ENRICHMENT_BATCH_SIZE);
       for (const batch of tableBatches) {
         const resp = await c.execute<{ getTables: GetTablesOutput }>(
@@ -281,10 +279,8 @@ export function defineTriageQualityFailures(
             pagination: { nbPerPage: batch.length, page: 0 },
           }
         );
-        for (const row of resp.getTables.data as Array<
-          Record<string, unknown>
-        >) {
-          tableDetails.set(row.id as string, row);
+        for (const row of resp.getTables.data) {
+          tableDetails.set(row.id, row);
         }
       }
 
@@ -311,24 +307,15 @@ export function defineTriageQualityFailures(
       const triageQueue: TriageQueueEntry[] = [];
       for (const [tableId, checks] of failuresByTable) {
         const detail = tableDetails.get(tableId);
-        const tableName = detail
-          ? ((detail.name as string | null) ?? "unknown")
-          : "unknown";
-        const popularity = detail
-          ? ((detail.numberOfQueries as number | null) ?? 0)
-          : 0;
+        const tableName = detail?.name ?? "unknown";
+        const popularity = detail?.numberOfQueries ?? 0;
         const failureCount = checks.length;
         const triageScore = popularity * failureCount;
 
         // Build tablePath from schema info if available
         let tablePath: string | null = null;
-        if (detail) {
-          const schema = detail.schema as
-            | { name?: string; databaseId?: string }
-            | undefined;
-          if (schema?.name) {
-            tablePath = `${schema.name}.${tableName}`;
-          }
+        if (detail?.schema?.name) {
+          tablePath = `${detail.schema.name}.${tableName}`;
         }
 
         const owners: Owners = detail
@@ -434,7 +421,7 @@ export function defineTriageQualityFailures(
 
       return {
         summary: {
-          totalChecks: failing.length,
+          matchedChecks: failing.length,
           failingChecks: failing.length,
           affectedTables: affectedTableIds.length,
           totalOwners,

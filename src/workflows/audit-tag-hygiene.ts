@@ -12,6 +12,7 @@ import {
 import type {
   GetTagsOutput,
   GetTablesOutput,
+  GetTablesScope,
   GetDashboardsOutput,
 } from "../generated/types.js";
 import { withErrorHandling } from "../mcp/tool-helpers.js";
@@ -176,13 +177,13 @@ export function defineAuditTagHygiene(
               `maxTags (max 1000).`
           );
         }
-        const rows = resp.getTags.data as Array<Record<string, unknown>>;
+        const rows = resp.getTags.data;
         for (const row of rows) {
           tags.push({
-            id: row.id as string,
-            label: row.label as string,
-            color: (row.color as string | null) ?? null,
-            linkedTermId: (row.linkedTermId as string | null) ?? null,
+            id: row.id,
+            label: row.label,
+            color: row.color ?? null,
+            linkedTermId: row.linkedTermId ?? null,
           });
         }
         if (rows.length < TAG_PAGE_SIZE) break;
@@ -204,7 +205,7 @@ export function defineAuditTagHygiene(
       }
 
       // ── 3. Fetch tables (paginated, scoped) ──────────────────────────
-      const tableScope: Record<string, unknown> = {};
+      const tableScope: GetTablesScope = {};
       if (databaseId) tableScope.databaseId = databaseId;
       if (schemaId) tableScope.schemaId = schemaId;
 
@@ -228,18 +229,16 @@ export function defineAuditTagHygiene(
             `getTables returned non-numeric totalCount (${String(totalCount)}).`
           );
         }
-        const rows = resp.getTables.data as Array<Record<string, unknown>>;
+        const rows = resp.getTables.data;
         for (const row of rows) {
           if (tablesScanned >= maxAssets) break;
           tablesScanned++;
           const tagEntities = Array.isArray(row.tagEntities)
-            ? (row.tagEntities as Array<Record<string, unknown>>)
+            ? row.tagEntities
             : [];
           for (const te of tagEntities) {
-            const tag = te.tag as Record<string, unknown> | undefined;
-            if (!tag) continue;
-            const tagId = tag.id as string;
-            const usage = tagUsageMap.get(tagId);
+            if (!te.tag) continue;
+            const usage = tagUsageMap.get(te.tag.id);
             if (usage) {
               usage.tableCount++;
             }
@@ -275,20 +274,16 @@ export function defineAuditTagHygiene(
               `getDashboards returned non-numeric totalCount (${String(totalCount)}).`
             );
           }
-          const rows = resp.getDashboards.data as Array<
-            Record<string, unknown>
-          >;
+          const rows = resp.getDashboards.data;
           for (const row of rows) {
             if (dashboardsScanned >= remainingAssetBudget) break;
             dashboardsScanned++;
             const tagEntities = Array.isArray(row.tagEntities)
-              ? (row.tagEntities as Array<Record<string, unknown>>)
+              ? row.tagEntities
               : [];
             for (const te of tagEntities) {
-              const tag = te.tag as Record<string, unknown> | undefined;
-              if (!tag) continue;
-              const tagId = tag.id as string;
-              const usage = tagUsageMap.get(tagId);
+              if (!te.tag) continue;
+              const usage = tagUsageMap.get(te.tag.id);
               if (usage) {
                 usage.dashboardCount++;
               }

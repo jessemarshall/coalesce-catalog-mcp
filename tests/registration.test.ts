@@ -55,7 +55,7 @@ function allDefinitions() {
 }
 
 describe("tool registration", () => {
-  it("registers 58 tools across all domains", () => {
+  it("registers 63 tools across all domains", () => {
     expect(allDefinitions()).toHaveLength(63);
   });
 
@@ -93,7 +93,7 @@ describe("tool registration", () => {
     }
   });
 
-  it("splits roughly 35 read / 23 write", () => {
+  it("splits roughly 39 read / 24 write", () => {
     const reads = allDefinitions().filter(
       (d) => d.config.annotations?.readOnlyHint === true
     );
