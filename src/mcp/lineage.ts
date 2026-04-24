@@ -63,6 +63,16 @@ const LineageAssetTypeSchema = z.enum([
   "TABLE",
 ]) satisfies z.ZodType<LineageAssetType>;
 
+// catalog_get_lineages returns edges between TABLE / DASHBOARD assets only —
+// the underlying `Lineage` type carries only parent/child table + dashboard ids.
+// Column / dashboard-field children live on `FieldLineage` via
+// catalog_get_field_lineages. Narrowing the enum here turns a silent "filter
+// accepted, zero rows returned" into an actionable schema rejection.
+const AssetLevelLineageAssetTypeSchema = z.enum([
+  "DASHBOARD",
+  "TABLE",
+]);
+
 // ── Asset-level lineage (tables + dashboards) ───────────────────────────────
 
 const LineageSortingKeySchema = z.enum([
@@ -97,8 +107,8 @@ const GetLineagesInputShape = {
   lineageType: LineageTypeSchema.optional().describe(
     "Filter by lineage origin: AUTOMATIC (inferred), MANUAL_CUSTOMER (via public API), MANUAL_OPS (ops team), OTHER_TECHNOS (imported)."
   ),
-  withChildAssetType: LineageAssetTypeSchema.optional().describe(
-    "Filter to edges whose child asset is of this type (COLUMN, DASHBOARD, DASHBOARD_FIELD, TABLE)."
+  withChildAssetType: AssetLevelLineageAssetTypeSchema.optional().describe(
+    "Filter to edges whose child asset is of this type. Only TABLE and DASHBOARD are meaningful here — column and dashboard-field children live on field lineage, use catalog_get_field_lineages for those."
   ),
   withDeleted: z.boolean().optional().describe("Include soft-deleted edges. Default: false."),
   withHidden: z.boolean().optional().describe("Include hidden edges. Default: false."),

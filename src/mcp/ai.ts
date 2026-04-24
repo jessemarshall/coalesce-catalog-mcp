@@ -70,6 +70,22 @@ function buildSearchQueriesScope(
   return scope;
 }
 
+// filterMode only applies when tableIds narrows the search. Passing filterMode
+// alone was previously silently dropped — callers would expect the filter to
+// apply and get a full unscoped search instead. Reject up-front.
+function assertSearchQueriesFilterCoherence(input: Record<string, unknown>): void {
+  const hasFilterMode = typeof input.filterMode === "string";
+  if (!hasFilterMode) return;
+  const hasTableIds =
+    Array.isArray(input.tableIds) && input.tableIds.length > 0;
+  if (!hasTableIds) {
+    throw new Error(
+      "filterMode requires tableIds. Either pass both (tableIds + filterMode) " +
+        "to narrow the semantic search, or omit both to search the full query history."
+    );
+  }
+}
+
 // ── AI assistant (start + poll) ─────────────────────────────────────────────
 
 const AskAssistantInputShape = {
@@ -126,6 +142,7 @@ export function defineAiTools(client: CatalogClient): CatalogToolDefinition[] {
         annotations: READ_ONLY_ANNOTATIONS,
       },
       handler: withErrorHandling(async (args, c) => {
+        assertSearchQueriesFilterCoherence(args);
         const variables = {
           data: {
             question: args.question as string,
