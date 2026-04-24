@@ -18,6 +18,7 @@ import { defineOwnerScorecard } from "../src/workflows/owner-scorecard.js";
 import { defineColumnLineage } from "../src/workflows/column-lineage.js";
 import { defineAuditDataProductReadiness } from "../src/workflows/audit-data-product-readiness.js";
 import { defineResolveOwnershipGaps } from "../src/workflows/resolve-ownership-gaps.js";
+import { defineReconcileOwnershipHandoff } from "../src/workflows/reconcile-ownership-handoff.js";
 import { definePropagateMetadata } from "../src/workflows/propagate-metadata.js";
 import { defineTriageQualityFailures } from "../src/workflows/triage-quality-failures.js";
 import { defineAuditTagHygiene } from "../src/workflows/audit-tag-hygiene.js";
@@ -48,6 +49,7 @@ function allDefinitions() {
     defineColumnLineage(client),
     defineAuditDataProductReadiness(client),
     defineResolveOwnershipGaps(client),
+    defineReconcileOwnershipHandoff(client),
     definePropagateMetadata(client),
     defineTriageQualityFailures(client),
     defineAuditTagHygiene(client),
@@ -55,8 +57,8 @@ function allDefinitions() {
 }
 
 describe("tool registration", () => {
-  it("registers 63 tools across all domains", () => {
-    expect(allDefinitions()).toHaveLength(63);
+  it("registers 64 tools across all domains", () => {
+    expect(allDefinitions()).toHaveLength(64);
   });
 
   it("every tool name starts with 'catalog_'", () => {
@@ -93,14 +95,14 @@ describe("tool registration", () => {
     }
   });
 
-  it("splits roughly 39 read / 24 write", () => {
+  it("splits roughly 40 read / 24 write", () => {
     const reads = allDefinitions().filter(
       (d) => d.config.annotations?.readOnlyHint === true
     );
     const writes = allDefinitions().filter(
       (d) => d.config.annotations?.readOnlyHint !== true
     );
-    expect(reads).toHaveLength(39);
+    expect(reads).toHaveLength(40);
     expect(writes).toHaveLength(24);
   });
 
