@@ -349,3 +349,28 @@ describe("catalog_search_teams handler", () => {
     expect(parsed.data[0].ownedAssetCount).toBe(0);
   });
 });
+
+describe("catalog_update_external_links input schema", () => {
+  const tool = find("catalog_update_external_links");
+  const schema = z.object(
+    tool.config.inputSchema as Record<string, z.ZodTypeAny>
+  );
+
+  it("accepts rows with id + url", () => {
+    expect(() =>
+      schema.parse({
+        data: [{ id: "link-1", url: "https://runbook.example.com/orders" }],
+      })
+    ).not.toThrow();
+  });
+
+  it("rejects rows missing the url field (no-op update)", () => {
+    expect(() => schema.parse({ data: [{ id: "link-1" }] })).toThrow();
+  });
+
+  it("rejects rows with a non-URL url string", () => {
+    expect(() =>
+      schema.parse({ data: [{ id: "link-1", url: "not-a-url" }] })
+    ).toThrow();
+  });
+});
