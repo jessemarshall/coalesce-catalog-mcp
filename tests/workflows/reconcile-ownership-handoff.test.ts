@@ -911,6 +911,101 @@ describe("catalog_reconcile_ownership_handoff — dashboard upstream evidence", 
     expect(evidenceTypes.upstreamNeighbor).toBe(1);
   });
 
+  it("surfaces parent dashboards as upstream neighbors with owners:[] (embedded-dashboard pattern)", async () => {
+    const ada: MockUser = {
+      id: "u-ada",
+      firstName: "Ada",
+      lastName: "L",
+      email: "ada@example.com",
+      role: "MEMBER",
+      ownedAssetIds: ["dash-child"],
+    };
+    const carol: MockUser = {
+      id: "u-carol",
+      firstName: "Carol",
+      lastName: "Q",
+      email: "carol@example.com",
+      role: "MEMBER",
+      ownedAssetIds: [],
+    };
+    const dashboards: MockDashboard[] = [
+      { id: "dash-child", name: "Embedded", popularity: 0.4 },
+    ];
+    // dash-child is fed by one parent TABLE (tbl-up, owned by Carol) AND
+    // one parent DASHBOARD (dash-parent). The fix must surface both.
+    const dashboardUpstreamEdgesByKey = new Map<string, MockEdge[]>([
+      [
+        "dash-child|upstream",
+        [
+          { id: "l1", parentTableId: "tbl-up", childDashboardId: "dash-child" },
+          {
+            id: "l2",
+            parentDashboardId: "dash-parent",
+            childDashboardId: "dash-child",
+          },
+        ],
+      ],
+    ]);
+    const tablesAugmented: MockTable[] = [
+      {
+        id: "tbl-up",
+        name: "UPSTREAM_TABLE",
+        ownerEntities: [
+          {
+            id: "oe-carol",
+            userId: "u-carol",
+            user: {
+              id: "u-carol",
+              email: "carol@example.com",
+              fullName: "Carol Q",
+            },
+          },
+        ],
+        teamOwnerEntities: [],
+      },
+    ];
+    const client = makeRouter({
+      users: [ada, carol],
+      tables: tablesAugmented,
+      dashboards,
+      terms: [],
+      teams: [],
+      dashboardUpstreamEdgesByKey,
+    });
+    const tool = defineReconcileOwnershipHandoff(client);
+    const out = parseResult(
+      await tool.handler({
+        email: "ada@example.com",
+        includeQueryAuthors: false,
+        includeTeamContext: false,
+      })
+    );
+    const queue = out.handoffQueue as Array<Record<string, unknown>>;
+    expect(queue).toHaveLength(1);
+    const evidence = queue[0].evidence as Record<string, unknown>;
+    const upstream = evidence.upstreamNeighbors as Array<
+      Record<string, unknown>
+    >;
+    // Both the parent table AND the parent dashboard must appear — the
+    // pre-fix code silently dropped the parent dashboard.
+    expect(upstream).toHaveLength(2);
+    const tableUp = upstream.find((n) => n.kind === "TABLE");
+    const dashUp = upstream.find((n) => n.kind === "DASHBOARD");
+    expect(tableUp).toBeDefined();
+    expect(tableUp!.id).toBe("tbl-up");
+    expect(dashUp).toBeDefined();
+    expect(dashUp!.id).toBe("dash-parent");
+    // Dashboard parents carry owners:[] by convention (dashboard ownership
+    // isn't used as an attribution signal — mirrors enrichTableNeighbors).
+    expect(dashUp!.owners).toEqual([]);
+    expect(dashUp!.name).toBeNull();
+    // Carol still appears as a candidate via the table-parent path.
+    const candidates = out.candidateSummary as Array<Record<string, unknown>>;
+    expect(
+      candidates.find((c) => c.userId === "u-carol")
+    ).toBeDefined();
+  });
+
   it("refuses when a dashboard's upstream table is missing from enrichment", async () => {
     const ada: MockUser = {
       id: "u-ada",
