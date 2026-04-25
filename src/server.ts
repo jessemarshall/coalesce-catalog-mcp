@@ -23,6 +23,7 @@ import { defineResolveOwnershipGaps } from "./workflows/resolve-ownership-gaps.j
 import { defineReconcileOwnershipHandoff } from "./workflows/reconcile-ownership-handoff.js";
 import { definePropagateMetadata } from "./workflows/propagate-metadata.js";
 import { defineTriageQualityFailures } from "./workflows/triage-quality-failures.js";
+import { defineAssessQualityFailureDashboardImpact } from "./workflows/assess-quality-failure-dashboard-impact.js";
 import { defineAuditTagHygiene } from "./workflows/audit-tag-hygiene.js";
 import { registerCatalogResources } from "./resources/index.js";
 import { registerCatalogPrompts } from "./prompts/index.js";
@@ -93,6 +94,10 @@ COMPOSED WORKFLOW TOOLS — prefer these over chaining 4-6 primitives:
 - catalog_triage_quality_failures — triage all failing quality checks into a
   prioritised action queue ranked by popularity * failure count, grouped by
   owner, with optional 1-hop upstream lineage pointers for root-cause analysis.
+- catalog_assess_quality_failure_dashboard_impact — extends triage_quality_failures
+  forward through lineage: enumerates which BI dashboards are downstream of
+  failing checks, ranks them by blast-radius (dashboard popularity x failure
+  count x criticality-tag boost), and shows which failing tables reach each.
 - catalog_audit_tag_hygiene — audit structural health of the tag layer: detects
   orphaned, unlinked, skewed, and near-duplicate tags across tables and dashboards.
 
@@ -146,6 +151,7 @@ export function createCoalesceCatalogMcpServer(
     defineReconcileOwnershipHandoff(client),
     definePropagateMetadata(client),
     defineTriageQualityFailures(client),
+    defineAssessQualityFailureDashboardImpact(client),
     defineAuditTagHygiene(client),
   ];
 
