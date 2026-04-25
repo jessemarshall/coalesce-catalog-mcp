@@ -292,6 +292,14 @@ const RunGraphQLInputShape = {
     .describe(
       "Opt-in override to allow mutation operations. Default false — protects against an agent accidentally calling deleteLineages / upsertLineages during exploration."
     ),
+  timeoutMs: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      "Per-call HTTP timeout in milliseconds for the upstream GraphQL request. Overrides the server's default (set via COALESCE_CATALOG_REQUEST_TIMEOUT_MS or DEFAULT_REQUEST_TIMEOUT_MS). Use a longer value (e.g. 120000) for paginated reads on big catalogs."
+    ),
 };
 
 /**
@@ -351,6 +359,7 @@ function defineRunGraphQL(client: CatalogClient): CatalogToolDefinition {
       const variables = args.variables as Record<string, unknown> | undefined;
       const operationName = args.operationName as string | undefined;
       const allowMutations = args.allowMutations === true;
+      const timeoutMs = typeof args.timeoutMs === "number" ? args.timeoutMs : undefined;
 
       // Read-only mode drops all mutation tools at registration; the
       // escape-hatch tool survives because it's read-by-default, but its
@@ -383,10 +392,13 @@ function defineRunGraphQL(client: CatalogClient): CatalogToolDefinition {
       // Pass `variables` through as-is (including the undefined case) so a
       // strict server that rejects `variables: {}` on variable-less documents
       // sees exactly what the caller sent.
+      const execOptions: { operationName?: string; timeoutMs?: number } = {};
+      if (operationName) execOptions.operationName = operationName;
+      if (timeoutMs !== undefined) execOptions.timeoutMs = timeoutMs;
       const envelope = await c.executeRaw<Record<string, unknown>>(
         query,
         variables,
-        operationName ? { operationName } : undefined
+        Object.keys(execOptions).length > 0 ? execOptions : undefined
       );
       const out: Record<string, unknown> = {};
       if (envelope.data !== undefined) out.data = envelope.data;
