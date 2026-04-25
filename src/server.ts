@@ -22,6 +22,7 @@ import { defineAuditDataProductReadiness } from "./workflows/audit-data-product-
 import { defineResolveOwnershipGaps } from "./workflows/resolve-ownership-gaps.js";
 import { defineReconcileOwnershipHandoff } from "./workflows/reconcile-ownership-handoff.js";
 import { definePropagateMetadata } from "./workflows/propagate-metadata.js";
+import { definePropagateTagsUpstream } from "./workflows/propagate-tags-upstream.js";
 import { defineTriageQualityFailures } from "./workflows/triage-quality-failures.js";
 import { defineAuditTagHygiene } from "./workflows/audit-tag-hygiene.js";
 import { registerCatalogResources } from "./resources/index.js";
@@ -90,6 +91,11 @@ COMPOSED WORKFLOW TOOLS — prefer these over chaining 4-6 primitives:
   table. Computes a typed diff plan for description / tags / owners axes,
   returns in dry-run mode by default; non-dry-run requires MCP elicitation
   confirmation and reports per-axis partial-failure tracking.
+- catalog_propagate_tags_upstream — upstream-direction tag propagation from a
+  presentation source (dashboard or gold-layer table) to the warehouse tables
+  that feed it. Dry-run by default; execute requires acknowledgeProvenance-
+  Semantics=true (provenance trail in plan) AND elicitation confirmation.
+  Refuses above 200 reached upstream tables.
 - catalog_triage_quality_failures — triage all failing quality checks into a
   prioritised action queue ranked by popularity * failure count, grouped by
   owner, with optional 1-hop upstream lineage pointers for root-cause analysis.
@@ -145,6 +151,7 @@ export function createCoalesceCatalogMcpServer(
     defineResolveOwnershipGaps(client),
     defineReconcileOwnershipHandoff(client),
     definePropagateMetadata(client),
+    definePropagateTagsUpstream(client),
     defineTriageQualityFailures(client),
     defineAuditTagHygiene(client),
   ];
