@@ -16,6 +16,7 @@ import { defineSummarizeAsset } from "./workflows/summarize-asset.js";
 import { defineTraceMissingLineage } from "./workflows/trace-missing-lineage.js";
 import { defineAssessImpact } from "./workflows/assess-impact.js";
 import { defineGovernanceScorecard } from "./workflows/governance-scorecard.js";
+import { defineAuditGovernanceFreshness } from "./workflows/audit-governance-freshness.js";
 import { defineOwnerScorecard } from "./workflows/owner-scorecard.js";
 import { defineColumnLineage } from "./workflows/column-lineage.js";
 import { defineAuditDataProductReadiness } from "./workflows/audit-data-product-readiness.js";
@@ -65,6 +66,11 @@ COMPOSED WORKFLOW TOOLS — prefer these over chaining 4-6 primitives:
   per-table flags for ownership / description / column-doc % / tag count, with a
   popularity-weighted aggregate roll-up. Use to drive Health dashboards or
   governance-rollout playbooks.
+- catalog_audit_governance_freshness — extends the scorecard with verifiedAt +
+  sensitivity-driven cadence policy: per-table staleness (days-since-last-review
+  minus required-cadence-days), bucketed (neverReviewed / overdue / dueSoon /
+  ok), sorted by stalenessDays * popularity. Answers "is metadata still current,
+  not just present?".
 - catalog_owner_scorecard — per-owner cleanup scorecard: given an email,
   enumerates every owned table/dashboard/term and groups them by hygiene issue
   (thin description, PII, uncertified, lineage gaps, term orphans, etc.). Pair
@@ -139,6 +145,7 @@ export function createCoalesceCatalogMcpServer(
     defineTraceMissingLineage(client),
     defineAssessImpact(client),
     defineGovernanceScorecard(client),
+    defineAuditGovernanceFreshness(client),
     defineOwnerScorecard(client),
     defineColumnLineage(client),
     defineAuditDataProductReadiness(client),
