@@ -132,16 +132,16 @@ function isReadOnlyTool(def: CatalogToolDefinition): boolean {
   return def.config.annotations?.readOnlyHint === true;
 }
 
-export function createCoalesceCatalogMcpServer(
+/**
+ * Single source of truth for the full tool registration list. Exported so the
+ * registration test can assert on the same array the server actually
+ * registers — without this, the test's hand-maintained list silently drifted
+ * away from server.ts every time a new tool was added.
+ */
+export function buildAllToolDefinitions(
   client: CatalogClient
-): McpServer {
-  const server = new McpServer(
-    { name: SERVER_NAME, version: SERVER_VERSION },
-    { instructions: SERVER_INSTRUCTIONS }
-  );
-
-  const readOnly = isReadOnlyMode();
-  const definitions: CatalogToolDefinition[] = [
+): CatalogToolDefinition[] {
+  return [
     ...defineTableTools(client),
     ...defineLineageTools(client),
     ...defineColumnTools(client),
@@ -168,6 +168,18 @@ export function createCoalesceCatalogMcpServer(
     defineAssessQualityFailureDashboardImpact(client),
     defineAuditTagHygiene(client),
   ];
+}
+
+export function createCoalesceCatalogMcpServer(
+  client: CatalogClient
+): McpServer {
+  const server = new McpServer(
+    { name: SERVER_NAME, version: SERVER_VERSION },
+    { instructions: SERVER_INSTRUCTIONS }
+  );
+
+  const readOnly = isReadOnlyMode();
+  const definitions = buildAllToolDefinitions(client);
 
   type RegisterToolHandler = Parameters<McpServer["registerTool"]>[2];
   for (const def of definitions) {
