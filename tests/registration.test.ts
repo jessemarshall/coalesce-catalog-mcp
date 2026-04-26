@@ -16,8 +16,8 @@ function allDefinitions() {
 }
 
 describe("tool registration", () => {
-  it("registers 64 tools across all domains", () => {
-    expect(allDefinitions()).toHaveLength(64);
+  it("registers 67 tools across all domains", () => {
+    expect(allDefinitions()).toHaveLength(67);
   });
 
   it("every tool name starts with 'catalog_'", () => {
@@ -54,15 +54,15 @@ describe("tool registration", () => {
     }
   });
 
-  it("splits roughly 40 read / 24 write", () => {
+  it("splits roughly 42 read / 25 write", () => {
     const reads = allDefinitions().filter(
       (d) => d.config.annotations?.readOnlyHint === true
     );
     const writes = allDefinitions().filter(
       (d) => d.config.annotations?.readOnlyHint !== true
     );
-    expect(reads).toHaveLength(40);
-    expect(writes).toHaveLength(24);
+    expect(reads).toHaveLength(42);
+    expect(writes).toHaveLength(25);
   });
 
   it("destructive writes have destructiveHint=true", () => {
