@@ -1,26 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { createClient } from "../src/client.js";
-import { defineTableTools } from "../src/mcp/tables.js";
-import { defineLineageTools } from "../src/mcp/lineage.js";
-import { defineColumnTools } from "../src/mcp/columns.js";
-import { defineDashboardTools } from "../src/mcp/dashboards.js";
-import { defineDiscoveryTools } from "../src/mcp/discovery.js";
-import { defineAnnotationTools } from "../src/mcp/annotations.js";
-import { defineGovernanceTools } from "../src/mcp/governance.js";
-import { defineAiTools } from "../src/mcp/ai.js";
-import { defineIntrospectionTools } from "../src/mcp/introspection.js";
-import { defineFindAssetByPath } from "../src/workflows/find-asset-by-path.js";
-import { defineSummarizeAsset } from "../src/workflows/summarize-asset.js";
-import { defineTraceMissingLineage } from "../src/workflows/trace-missing-lineage.js";
-import { defineAssessImpact } from "../src/workflows/assess-impact.js";
-import { defineGovernanceScorecard } from "../src/workflows/governance-scorecard.js";
-import { defineOwnerScorecard } from "../src/workflows/owner-scorecard.js";
-import { defineColumnLineage } from "../src/workflows/column-lineage.js";
-import { defineAuditDataProductReadiness } from "../src/workflows/audit-data-product-readiness.js";
-import { defineResolveOwnershipGaps } from "../src/workflows/resolve-ownership-gaps.js";
-import { definePropagateMetadata } from "../src/workflows/propagate-metadata.js";
-import { defineTriageQualityFailures } from "../src/workflows/triage-quality-failures.js";
-import { defineAuditTagHygiene } from "../src/workflows/audit-tag-hygiene.js";
+import { buildAllToolDefinitions } from "../src/server.js";
 
 const client = createClient({
   apiKey: "dummy",
@@ -29,34 +9,15 @@ const client = createClient({
 });
 
 function allDefinitions() {
-  return [
-    ...defineTableTools(client),
-    ...defineLineageTools(client),
-    ...defineColumnTools(client),
-    ...defineDashboardTools(client),
-    ...defineDiscoveryTools(client),
-    ...defineAnnotationTools(client),
-    ...defineGovernanceTools(client),
-    ...defineAiTools(client),
-    ...defineIntrospectionTools(client),
-    defineFindAssetByPath(client),
-    defineSummarizeAsset(client),
-    defineTraceMissingLineage(client),
-    defineAssessImpact(client),
-    defineGovernanceScorecard(client),
-    defineOwnerScorecard(client),
-    defineColumnLineage(client),
-    defineAuditDataProductReadiness(client),
-    defineResolveOwnershipGaps(client),
-    definePropagateMetadata(client),
-    defineTriageQualityFailures(client),
-    defineAuditTagHygiene(client),
-  ];
+  // Single source of truth: assert against the same list the server registers.
+  // If a new tool is added to server.ts, the count assertions below catch it
+  // immediately rather than passing silently against a stale duplicate list.
+  return buildAllToolDefinitions(client);
 }
 
 describe("tool registration", () => {
-  it("registers 63 tools across all domains", () => {
-    expect(allDefinitions()).toHaveLength(63);
+  it("registers 67 tools across all domains", () => {
+    expect(allDefinitions()).toHaveLength(67);
   });
 
   it("every tool name starts with 'catalog_'", () => {
@@ -93,15 +54,15 @@ describe("tool registration", () => {
     }
   });
 
-  it("splits roughly 39 read / 24 write", () => {
+  it("splits roughly 42 read / 25 write", () => {
     const reads = allDefinitions().filter(
       (d) => d.config.annotations?.readOnlyHint === true
     );
     const writes = allDefinitions().filter(
       (d) => d.config.annotations?.readOnlyHint !== true
     );
-    expect(reads).toHaveLength(39);
-    expect(writes).toHaveLength(24);
+    expect(reads).toHaveLength(42);
+    expect(writes).toHaveLength(25);
   });
 
   it("destructive writes have destructiveHint=true", () => {

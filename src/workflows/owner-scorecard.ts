@@ -5,7 +5,6 @@ import {
   type CatalogToolDefinition,
 } from "../catalog/types.js";
 import {
-  GET_USERS,
   GET_TABLES_DETAIL_BATCH,
   GET_DASHBOARDS_DETAIL_BATCH,
   GET_TERMS_DETAIL_BATCH,
@@ -19,10 +18,14 @@ import type {
   GetLineagesOutput,
   GetTablesOutput,
   GetTermsOutput,
-  GetUsersOutput,
 } from "../generated/types.js";
 import { withErrorHandling } from "../mcp/tool-helpers.js";
-import { ENRICHMENT_BATCH_SIZE } from "./shared.js";
+import {
+  ENRICHMENT_BATCH_SIZE,
+  resolveUserByEmail,
+  USER_PAGE_SIZE,
+  USER_LOOKUP_MAX_PAGES,
+} from "./shared.js";
 
 // ── Input schema ────────────────────────────────────────────────────────────
 
@@ -58,11 +61,6 @@ const OwnerScorecardInputShape = {
 };
 
 // ── Constants ───────────────────────────────────────────────────────────────
-
-// User page-scan ceiling — mirrors the governance.ts findUserById cap so the
-// two lookups fail at the same boundary. Page size is 500 (API max).
-const USER_LOOKUP_PAGE_SIZE = 500;
-const USER_LOOKUP_MAX_PAGES = 20;
 
 // Asset hydration: owned IDs are heterogeneous (tables/dashboards/terms), so
 // we fan each search out in parallel using the `ids:` scope filter. Owners
@@ -120,58 +118,6 @@ interface DetailedTerm {
 interface LineageCounts {
   upstream: number;
   downstream: number;
-}
-
-// ── User lookup (email → userId + owned IDs) ────────────────────────────────
-
-interface OwnerIdentity {
-  userId: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  ownedAssetIds: string[];
-}
-
-// Distinguish "user confirmed absent" (short page reached without a match)
-// from "scan ceiling hit" (20 full pages without a match). The first is a
-// terminal notFound for the caller; the second means the scan is incomplete
-// and the tool must refuse rather than silently claim the user doesn't exist.
-type OwnerResolution =
-  | { kind: "found"; owner: OwnerIdentity }
-  | { kind: "absent" }
-  | { kind: "ceiling"; usersScanned: number };
-
-async function resolveOwnerByEmail(
-  client: CatalogClient,
-  email: string
-): Promise<OwnerResolution> {
-  const target = email.toLowerCase();
-  for (let page = 0; page < USER_LOOKUP_MAX_PAGES; page++) {
-    const resp = await client.execute<{ getUsers: GetUsersOutput[] }>(
-      GET_USERS,
-      { pagination: { nbPerPage: USER_LOOKUP_PAGE_SIZE, page } }
-    );
-    const match = resp.getUsers.find(
-      (u) => u.email.toLowerCase() === target
-    );
-    if (match) {
-      return {
-        kind: "found",
-        owner: {
-          userId: match.id,
-          email: match.email,
-          firstName: match.firstName,
-          lastName: match.lastName,
-          ownedAssetIds: match.ownedAssetIds ?? [],
-        },
-      };
-    }
-    if (resp.getUsers.length < USER_LOOKUP_PAGE_SIZE) return { kind: "absent" };
-  }
-  return {
-    kind: "ceiling",
-    usersScanned: USER_LOOKUP_PAGE_SIZE * USER_LOOKUP_MAX_PAGES,
-  };
 }
 
 // ── Asset hydration ─────────────────────────────────────────────────────────
@@ -540,16 +486,16 @@ export function defineOwnerScorecard(
 
       const asOfMs = Date.now();
 
-      const resolution = await resolveOwnerByEmail(c, email);
+      const resolution = await resolveUserByEmail(c, email);
       if (resolution.kind === "ceiling") {
-        // Scan ceiling hit — the user may or may not exist beyond page 20.
+        // Scan ceiling hit — the user may or may not exist beyond the cap.
         // Emitting notFound here would be a false certainty, so refuse.
         throw new Error(
           `User lookup did not reach the end of the user directory: scanned ` +
             `${resolution.usersScanned} users without finding '${email}'. The tenant is ` +
-            `larger than the scorecard's scan ceiling; the public API has no ` +
-            `user-by-email endpoint so this tool cannot distinguish "absent" ` +
-            `from "beyond the ceiling" in this case. Retrying will not help.`
+            `larger than the ${USER_PAGE_SIZE * USER_LOOKUP_MAX_PAGES}-user scan ceiling; the ` +
+            `public API has no user-by-email endpoint so this tool cannot distinguish ` +
+            `"absent" from "beyond the ceiling" in this case. Retrying will not help.`
         );
       }
       if (resolution.kind === "absent") {

@@ -196,12 +196,8 @@ export function defineAuditTagHygiene(
         string,
         { tableCount: number; dashboardCount: number }
       >();
-      // Index by label (lowercased) -> tag id, for reverse lookup from
-      // tagEntities on tables/dashboards which carry tag.label.
-      const labelToId = new Map<string, string>();
       for (const tag of tags) {
         tagUsageMap.set(tag.id, { tableCount: 0, dashboardCount: 0 });
-        labelToId.set(tag.label.toLowerCase(), tag.id);
       }
 
       // ── 3. Fetch tables (paginated, scoped) ──────────────────────────

@@ -78,3 +78,36 @@ describe("upsert_lineages row refine (exactly-one-parent × exactly-one-child)",
     expect(() => rowSchema.parse({})).toThrow();
   });
 });
+
+describe("catalog_get_lineages withChildAssetType narrowing", () => {
+  const getLineages = defineLineageTools(client).find(
+    (t) => t.name === "catalog_get_lineages"
+  )!;
+  const inputSchema = z.object(
+    getLineages.config.inputSchema as Record<string, z.ZodTypeAny>
+  );
+
+  it("accepts TABLE", () => {
+    expect(() =>
+      inputSchema.parse({ withChildAssetType: "TABLE" })
+    ).not.toThrow();
+  });
+
+  it("accepts DASHBOARD", () => {
+    expect(() =>
+      inputSchema.parse({ withChildAssetType: "DASHBOARD" })
+    ).not.toThrow();
+  });
+
+  it("rejects COLUMN (use catalog_get_field_lineages)", () => {
+    expect(() =>
+      inputSchema.parse({ withChildAssetType: "COLUMN" })
+    ).toThrow();
+  });
+
+  it("rejects DASHBOARD_FIELD (use catalog_get_field_lineages)", () => {
+    expect(() =>
+      inputSchema.parse({ withChildAssetType: "DASHBOARD_FIELD" })
+    ).toThrow();
+  });
+});

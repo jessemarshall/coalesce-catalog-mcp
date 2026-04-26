@@ -278,4 +278,22 @@ describe("catalog_run_graphql", () => {
       else process.env.COALESCE_CATALOG_READ_ONLY = originalEnv;
     }
   });
+
+  it("surfaces a diagnostic when the server returns an empty envelope", async () => {
+    const client = makeMockClient(() => ({ data: { unused: true } }));
+    // Castor can return HTTP 2xx with a body that has no data/errors/extensions
+    // (observed for the largest read operations — getDatabases, getSchemas,
+    // getDashboards, getDataQualities, getLineages — likely a server-side
+    // size or execution limit). Override executeRaw directly because the
+    // mock helper wraps non-envelope returns into `{ data: ... }`.
+    client.executeRaw = async () => ({});
+    const tool = runGraphqlTool(client);
+    const out = parseResult(
+      await tool.handler({
+        query: "query { getDatabases { totalCount data { id } } }",
+      })
+    );
+    expect(out.diagnostic).toBe("empty_envelope");
+    expect(out.error).toMatch(/empty GraphQL envelope/);
+  });
 });

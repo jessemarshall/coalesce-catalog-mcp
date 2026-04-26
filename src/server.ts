@@ -16,12 +16,16 @@ import { defineSummarizeAsset } from "./workflows/summarize-asset.js";
 import { defineTraceMissingLineage } from "./workflows/trace-missing-lineage.js";
 import { defineAssessImpact } from "./workflows/assess-impact.js";
 import { defineGovernanceScorecard } from "./workflows/governance-scorecard.js";
+import { defineAuditGovernanceFreshness } from "./workflows/audit-governance-freshness.js";
 import { defineOwnerScorecard } from "./workflows/owner-scorecard.js";
 import { defineColumnLineage } from "./workflows/column-lineage.js";
 import { defineAuditDataProductReadiness } from "./workflows/audit-data-product-readiness.js";
 import { defineResolveOwnershipGaps } from "./workflows/resolve-ownership-gaps.js";
+import { defineReconcileOwnershipHandoff } from "./workflows/reconcile-ownership-handoff.js";
 import { definePropagateMetadata } from "./workflows/propagate-metadata.js";
+import { definePropagateTagsUpstream } from "./workflows/propagate-tags-upstream.js";
 import { defineTriageQualityFailures } from "./workflows/triage-quality-failures.js";
+import { defineAssessQualityFailureDashboardImpact } from "./workflows/assess-quality-failure-dashboard-impact.js";
 import { defineAuditTagHygiene } from "./workflows/audit-tag-hygiene.js";
 import { registerCatalogResources } from "./resources/index.js";
 import { registerCatalogPrompts } from "./prompts/index.js";
@@ -64,6 +68,11 @@ COMPOSED WORKFLOW TOOLS — prefer these over chaining 4-6 primitives:
   per-table flags for ownership / description / column-doc % / tag count, with a
   popularity-weighted aggregate roll-up. Use to drive Health dashboards or
   governance-rollout playbooks.
+- catalog_audit_governance_freshness — extends the scorecard with verifiedAt +
+  sensitivity-driven cadence policy: per-table staleness (days-since-last-review
+  minus required-cadence-days), bucketed (neverReviewed / overdue / dueSoon /
+  ok), sorted by stalenessDays * popularity. Answers "is metadata still current,
+  not just present?".
 - catalog_owner_scorecard — per-owner cleanup scorecard: given an email,
   enumerates every owned table/dashboard/term and groups them by hygiene issue
   (thin description, PII, uncertified, lineage gaps, term orphans, etc.). Pair
@@ -80,13 +89,27 @@ COMPOSED WORKFLOW TOOLS — prefer these over chaining 4-6 primitives:
   lineage neighbor owners). Raw signals only, no confidence scores; refuses loudly
   above 200 unowned tables. Pair with governance_scorecard (size the gap) then
   this tool (close it).
+- catalog_reconcile_ownership_handoff — for a departing owner (by email), builds
+  a blast-radius-ranked handoff plan: enumerates every owned table/dashboard/term,
+  scores each asset (popularity x downstream consumer count x query volume), gathers
+  candidate-owner evidence (query authors, 1-hop neighbor owners, team membership),
+  and aggregates candidates into a ranked summary. Refuses above 200 owned assets.
 - catalog_propagate_metadata — downstream metadata propagation from a source
   table. Computes a typed diff plan for description / tags / owners axes,
   returns in dry-run mode by default; non-dry-run requires MCP elicitation
   confirmation and reports per-axis partial-failure tracking.
+- catalog_propagate_tags_upstream — upstream-direction tag propagation from a
+  presentation source (dashboard or gold-layer table) to the warehouse tables
+  that feed it. Dry-run by default; execute requires acknowledgeProvenance-
+  Semantics=true (provenance trail in plan) AND elicitation confirmation.
+  Refuses above 200 reached upstream tables.
 - catalog_triage_quality_failures — triage all failing quality checks into a
   prioritised action queue ranked by popularity * failure count, grouped by
   owner, with optional 1-hop upstream lineage pointers for root-cause analysis.
+- catalog_assess_quality_failure_dashboard_impact — extends triage_quality_failures
+  forward through lineage: enumerates which BI dashboards are downstream of
+  failing checks, ranks them by blast-radius (dashboard popularity x failure
+  count x criticality-tag boost), and shows which failing tables reach each.
 - catalog_audit_tag_hygiene — audit structural health of the tag layer: detects
   orphaned, unlinked, skewed, and near-duplicate tags across tables and dashboards.
 
@@ -109,16 +132,16 @@ function isReadOnlyTool(def: CatalogToolDefinition): boolean {
   return def.config.annotations?.readOnlyHint === true;
 }
 
-export function createCoalesceCatalogMcpServer(
+/**
+ * Single source of truth for the full tool registration list. Exported so the
+ * registration test can assert on the same array the server actually
+ * registers — without this, the test's hand-maintained list silently drifted
+ * away from server.ts every time a new tool was added.
+ */
+export function buildAllToolDefinitions(
   client: CatalogClient
-): McpServer {
-  const server = new McpServer(
-    { name: SERVER_NAME, version: SERVER_VERSION },
-    { instructions: SERVER_INSTRUCTIONS }
-  );
-
-  const readOnly = isReadOnlyMode();
-  const definitions: CatalogToolDefinition[] = [
+): CatalogToolDefinition[] {
+  return [
     ...defineTableTools(client),
     ...defineLineageTools(client),
     ...defineColumnTools(client),
@@ -133,14 +156,30 @@ export function createCoalesceCatalogMcpServer(
     defineTraceMissingLineage(client),
     defineAssessImpact(client),
     defineGovernanceScorecard(client),
+    defineAuditGovernanceFreshness(client),
     defineOwnerScorecard(client),
     defineColumnLineage(client),
     defineAuditDataProductReadiness(client),
     defineResolveOwnershipGaps(client),
+    defineReconcileOwnershipHandoff(client),
     definePropagateMetadata(client),
+    definePropagateTagsUpstream(client),
     defineTriageQualityFailures(client),
+    defineAssessQualityFailureDashboardImpact(client),
     defineAuditTagHygiene(client),
   ];
+}
+
+export function createCoalesceCatalogMcpServer(
+  client: CatalogClient
+): McpServer {
+  const server = new McpServer(
+    { name: SERVER_NAME, version: SERVER_VERSION },
+    { instructions: SERVER_INSTRUCTIONS }
+  );
+
+  const readOnly = isReadOnlyMode();
+  const definitions = buildAllToolDefinitions(client);
 
   type RegisterToolHandler = Parameters<McpServer["registerTool"]>[2];
   for (const def of definitions) {

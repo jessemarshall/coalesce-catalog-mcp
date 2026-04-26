@@ -86,6 +86,36 @@ describe("catalog_search_queries handler", () => {
     expect(vars.scope).toBeUndefined();
   });
 
+  it("rejects filterMode without tableIds up-front", async () => {
+    const client = makeMockClient(() => ({ searchQueries: { data: [] } }));
+    const tool = findTool(defineAiTools(client), "catalog_search_queries");
+
+    const res = await tool.handler({ question: "x", filterMode: "ANY" });
+
+    expect(res.isError).toBe(true);
+    expect(parseResult(res)).toMatchObject({
+      error: expect.stringMatching(/filterMode requires tableIds/),
+    });
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("rejects filterMode with an empty tableIds array", async () => {
+    const client = makeMockClient(() => ({ searchQueries: { data: [] } }));
+    const tool = findTool(defineAiTools(client), "catalog_search_queries");
+
+    const res = await tool.handler({
+      question: "x",
+      tableIds: [],
+      filterMode: "ALL",
+    });
+
+    expect(res.isError).toBe(true);
+    expect(parseResult(res)).toMatchObject({
+      error: expect.stringMatching(/filterMode requires tableIds/),
+    });
+    expect(client.calls).toHaveLength(0);
+  });
+
   it("surfaces GraphQL errors as isError tool results", async () => {
     const client = makeMockClient(() => {
       throw new CatalogGraphQLError([{ message: "boom" }]);

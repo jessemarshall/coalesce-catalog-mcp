@@ -6,16 +6,21 @@ import {
 } from "../catalog/types.js";
 import {
   GET_TABLES_DETAIL_BATCH,
-  GET_LINEAGES,
-  GET_TABLE_QUERIES,
 } from "../catalog/operations.js";
 import type {
-  GetLineagesOutput,
-  GetTableQueriesOutput,
   GetTablesOutput,
 } from "../generated/types.js";
 import { withErrorHandling } from "../mcp/tool-helpers.js";
-import { hasOwner, ENRICHMENT_BATCH_SIZE } from "./shared.js";
+import {
+  hasOwner,
+  ENRICHMENT_BATCH_SIZE,
+  extractNeighborOwners,
+  fetchTableQueryAuthors,
+  fetchOneHopNeighborIds,
+  type NeighborOwner,
+  type NeighborRef,
+  type QueryAuthorSignal,
+} from "./shared.js";
 
 const UNOWNED_HARD_CAP = 200;
 const TABLE_PAGE_SIZE = 100;
@@ -118,45 +123,6 @@ function pickScope(args: {
   return null;
 }
 
-interface NeighborOwner {
-  type: "user" | "team";
-  userId?: string | null;
-  teamId?: string | null;
-  email?: string | null;
-  name: string | null;
-}
-
-function extractNeighborOwners(
-  row: Record<string, unknown> | undefined
-): NeighborOwner[] {
-  if (!row) return [];
-  const owners: NeighborOwner[] = [];
-  if (Array.isArray(row.ownerEntities)) {
-    for (const o of row.ownerEntities as Array<Record<string, unknown>>) {
-      if (o.userId == null) continue;
-      const user = (o.user as Record<string, unknown> | undefined) ?? {};
-      owners.push({
-        type: "user",
-        userId: o.userId as string,
-        email: (user.email as string | null) ?? null,
-        name: (user.fullName as string | null) ?? null,
-      });
-    }
-  }
-  if (Array.isArray(row.teamOwnerEntities)) {
-    for (const t of row.teamOwnerEntities as Array<Record<string, unknown>>) {
-      if (t.teamId == null) continue;
-      const team = (t.team as Record<string, unknown> | undefined) ?? {};
-      owners.push({
-        type: "team",
-        teamId: t.teamId as string,
-        name: (team.name as string | null) ?? null,
-      });
-    }
-  }
-  return owners;
-}
-
 async function fetchScopedTables(
   client: CatalogClient,
   scope: ScopedFilter
@@ -211,119 +177,6 @@ async function fetchScopedTables(
     );
   }
   return out;
-}
-
-interface QueryAuthorSignal {
-  author: string;
-  queryCount: number;
-  queryTypeBreakdown: Record<string, number>;
-}
-
-async function fetchQueryAuthors(
-  client: CatalogClient,
-  tableId: string,
-  topN: number
-): Promise<{
-  authors: QueryAuthorSignal[];
-  totalQueriesSeen: number;
-  queriesWithoutAuthor: number;
-}> {
-  // One call, up to QUERY_PROBE_SIZE queries. The API sorts by timestamp DESC
-  // by default; the probe is "which humans touched this table recently" not
-  // "cumulative all-time volume," which is the correct framing for pointing
-  // at a likely owner.
-  const resp = await client.execute<{
-    getTableQueries: GetTableQueriesOutput;
-  }>(GET_TABLE_QUERIES, {
-    scope: { tableIds: [tableId] },
-    sorting: [{ sortingKey: "timestamp", direction: "DESC" }],
-    pagination: { nbPerPage: QUERY_PROBE_SIZE, page: 0 },
-  });
-  const rows = resp.getTableQueries.data as Array<{
-    author?: string | null;
-    queryType?: string | null;
-  }>;
-  const counts = new Map<string, QueryAuthorSignal>();
-  let queriesWithoutAuthor = 0;
-  for (const row of rows) {
-    const author = row.author;
-    if (!author || author.trim().length === 0) {
-      // Track the drop explicitly so the caller can distinguish "no human
-      // authors in the recent window" from "service-account writes swamped
-      // the recent window" — different remediation paths.
-      queriesWithoutAuthor += 1;
-      continue;
-    }
-    const entry = counts.get(author) ?? {
-      author,
-      queryCount: 0,
-      queryTypeBreakdown: {},
-    };
-    entry.queryCount += 1;
-    const qt = row.queryType ?? "UNKNOWN";
-    entry.queryTypeBreakdown[qt] = (entry.queryTypeBreakdown[qt] ?? 0) + 1;
-    counts.set(author, entry);
-  }
-  const sorted = [...counts.values()].sort(
-    (a, b) => b.queryCount - a.queryCount || a.author.localeCompare(b.author)
-  );
-  return {
-    authors: sorted.slice(0, topN),
-    totalQueriesSeen: rows.length,
-    queriesWithoutAuthor,
-  };
-}
-
-interface NeighborRef {
-  id: string;
-  kind: "TABLE" | "DASHBOARD";
-}
-
-async function fetchOneHopNeighborIds(
-  client: CatalogClient,
-  tableId: string,
-  direction: "upstream" | "downstream"
-): Promise<NeighborRef[]> {
-  // Paginate exhaustively up to NEIGHBOR_PAGES_MAX; throw if we blow that
-  // ceiling. The "complete or refuse" contract is upheld even though the
-  // caller is likely to only use 10 neighbors — we don't want to silently
-  // drop the rest.
-  const seen = new Set<string>();
-  const out: NeighborRef[] = [];
-  for (let page = 0; page < NEIGHBOR_PAGES_MAX; page++) {
-    const scope: Record<string, string> = {};
-    if (direction === "downstream") scope.parentTableId = tableId;
-    else scope.childTableId = tableId;
-    const resp = await client.execute<{ getLineages: GetLineagesOutput }>(
-      GET_LINEAGES,
-      {
-        scope,
-        pagination: { nbPerPage: NEIGHBOR_PAGE_SIZE, page },
-      }
-    );
-    const rows = resp.getLineages.data;
-    for (const e of rows) {
-      const neighborId =
-        direction === "downstream"
-          ? (e.childTableId ?? e.childDashboardId)
-          : e.parentTableId;
-      if (!neighborId) continue;
-      if (seen.has(neighborId)) continue;
-      seen.add(neighborId);
-      // Upstream edges against a childTableId scope can only have table
-      // parents (no parent-dashboard-of-a-table edge shape exists in the
-      // API), so upstream is always TABLE. Downstream can be either.
-      const kind: "TABLE" | "DASHBOARD" =
-        direction === "upstream" || e.childTableId ? "TABLE" : "DASHBOARD";
-      out.push({ id: neighborId, kind });
-    }
-    if (rows.length < NEIGHBOR_PAGE_SIZE) return out;
-  }
-  throw new Error(
-    `Lineage pagination exceeded ${NEIGHBOR_PAGES_MAX} pages for ${direction} ` +
-      `of table ${tableId} (>${NEIGHBOR_PAGES_MAX * NEIGHBOR_PAGE_SIZE} edges). ` +
-      `Refusing to produce partial neighbor evidence; investigate the lineage data for this node.`
-  );
 }
 
 async function enrichTableNeighbors(
@@ -398,11 +251,14 @@ async function gatherEvidenceForTable(
 
   if (opts.includeQueryAuthors) {
     tasks.push(
-      fetchQueryAuthors(client, id, opts.queryAuthorLimit).then((qa) => {
+      fetchTableQueryAuthors(client, id, {
+        topN: opts.queryAuthorLimit,
+        probeSize: QUERY_PROBE_SIZE,
+      }).then((qa) => {
         bundle.queryAuthors = {
           totalQueriesSeen: qa.totalQueriesSeen,
           queriesWithoutAuthor: qa.queriesWithoutAuthor,
-          probeCap: QUERY_PROBE_SIZE,
+          probeCap: qa.probeCap,
           authors: qa.authors,
         };
       })
@@ -413,8 +269,14 @@ async function gatherEvidenceForTable(
     tasks.push(
       (async () => {
         const [upstream, downstream] = await Promise.all([
-          fetchOneHopNeighborIds(client, id, "upstream"),
-          fetchOneHopNeighborIds(client, id, "downstream"),
+          fetchOneHopNeighborIds(client, id, "upstream", {
+            pageSize: NEIGHBOR_PAGE_SIZE,
+            maxPages: NEIGHBOR_PAGES_MAX,
+          }),
+          fetchOneHopNeighborIds(client, id, "downstream", {
+            pageSize: NEIGHBOR_PAGE_SIZE,
+            maxPages: NEIGHBOR_PAGES_MAX,
+          }),
         ]);
         const tableNeighborIds = [
           ...upstream.filter((n) => n.kind === "TABLE").map((n) => n.id),

@@ -576,13 +576,13 @@ export function defineGovernanceTools(
       config: {
         title: "Update External Link URLs",
         description:
-          "Update the URL of an existing external link. Identity + technology stay the same; only `url` is editable. Batches up to 500; requires READ_WRITE token.",
+          "Update the URL of an existing external link. Identity + technology stay the same; only `url` is editable — each batch item must include a new URL (otherwise the item would be a no-op). Batches up to 500; requires READ_WRITE token.",
         inputSchema: {
           data: z
             .array(
               z.object({
                 id: z.string().min(1).describe("Catalog UUID of the external link."),
-                url: z.string().url().optional().describe("New URL (omit to leave unchanged)."),
+                url: z.string().url().describe("New URL. Required — it's the only editable field."),
               })
             )
             .min(1)

@@ -7,4 +7,7 @@ dist/
 coverage/
 .tsbuildinfo
 docs/RELEASES.md
+docs/private-api-reference.md
 CLAUDE.md
+.coalesce
+coalesce_transform_mcp_data_cache/

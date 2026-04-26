@@ -23,7 +23,7 @@ export const REGION_BASE_URLS: Record<CatalogRegion, string> = {
 
 export const GRAPHQL_PATH = "/public/graphql";
 
-export const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 
 export const DEFAULT_PAGE_SIZE = 100;
 export const MAX_PAGE_SIZE = 500;

@@ -292,6 +292,14 @@ const RunGraphQLInputShape = {
     .describe(
       "Opt-in override to allow mutation operations. Default false — protects against an agent accidentally calling deleteLineages / upsertLineages during exploration."
     ),
+  timeoutMs: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      "Per-call HTTP timeout in milliseconds for the upstream GraphQL request. Overrides the server's default (set via COALESCE_CATALOG_REQUEST_TIMEOUT_MS or DEFAULT_REQUEST_TIMEOUT_MS). Use a longer value (e.g. 120000) for paginated reads on big catalogs."
+    ),
 };
 
 /**
@@ -351,6 +359,7 @@ function defineRunGraphQL(client: CatalogClient): CatalogToolDefinition {
       const variables = args.variables as Record<string, unknown> | undefined;
       const operationName = args.operationName as string | undefined;
       const allowMutations = args.allowMutations === true;
+      const timeoutMs = typeof args.timeoutMs === "number" ? args.timeoutMs : undefined;
 
       // Read-only mode drops all mutation tools at registration; the
       // escape-hatch tool survives because it's read-by-default, but its
@@ -383,15 +392,31 @@ function defineRunGraphQL(client: CatalogClient): CatalogToolDefinition {
       // Pass `variables` through as-is (including the undefined case) so a
       // strict server that rejects `variables: {}` on variable-less documents
       // sees exactly what the caller sent.
+      const execOptions: { operationName?: string; timeoutMs?: number } = {};
+      if (operationName) execOptions.operationName = operationName;
+      if (timeoutMs !== undefined) execOptions.timeoutMs = timeoutMs;
       const envelope = await c.executeRaw<Record<string, unknown>>(
         query,
         variables,
-        operationName ? { operationName } : undefined
+        Object.keys(execOptions).length > 0 ? execOptions : undefined
       );
       const out: Record<string, unknown> = {};
       if (envelope.data !== undefined) out.data = envelope.data;
       if (envelope.errors) out.errors = envelope.errors;
       if (envelope.extensions) out.extensions = envelope.extensions;
+      // An empty envelope (HTTP 2xx + body with no data/errors/extensions) is
+      // not a well-formed GraphQL response. Surface it as a diagnostic so
+      // callers don't silently treat `{}` as "no rows" — typically caused by
+      // a server-side response-size or per-request execution limit.
+      if (Object.keys(out).length === 0) {
+        return {
+          error:
+            "Catalog API returned an empty GraphQL envelope (no data, no errors, no extensions). " +
+            "This usually indicates a server-side response-size or execution limit on the operation. " +
+            "Try reducing nbPerPage and/or raising timeoutMs.",
+          diagnostic: "empty_envelope",
+        };
+      }
       return out;
     }, client),
   };
