@@ -404,6 +404,19 @@ function defineRunGraphQL(client: CatalogClient): CatalogToolDefinition {
       if (envelope.data !== undefined) out.data = envelope.data;
       if (envelope.errors) out.errors = envelope.errors;
       if (envelope.extensions) out.extensions = envelope.extensions;
+      // An empty envelope (HTTP 2xx + body with no data/errors/extensions) is
+      // not a well-formed GraphQL response. Surface it as a diagnostic so
+      // callers don't silently treat `{}` as "no rows" — typically caused by
+      // a server-side response-size or per-request execution limit.
+      if (Object.keys(out).length === 0) {
+        return {
+          error:
+            "Catalog API returned an empty GraphQL envelope (no data, no errors, no extensions). " +
+            "This usually indicates a server-side response-size or execution limit on the operation. " +
+            "Try reducing nbPerPage and/or raising timeoutMs.",
+          diagnostic: "empty_envelope",
+        };
+      }
       return out;
     }, client),
   };
