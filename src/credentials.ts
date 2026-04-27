@@ -3,7 +3,7 @@ import {
   GRAPHQL_PATH,
   REGION_BASE_URLS,
   type CatalogRegion,
-} from "../../constants.js";
+} from "./constants.js";
 
 export interface CatalogAuth {
   apiKey: string;

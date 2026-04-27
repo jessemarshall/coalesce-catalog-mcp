@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   resolveCatalogAuth,
   CatalogConfigError,
-} from "../src/services/config/credentials.js";
+} from "../src/credentials.js";
 
 // Snapshot and restore relevant env vars around each test so test isolation
 // is maintained even if the host machine has real credentials set.

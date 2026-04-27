@@ -28,6 +28,14 @@ export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 export const DEFAULT_PAGE_SIZE = 100;
 export const MAX_PAGE_SIZE = 500;
 
+/**
+ * Maximum number of rows accepted in a single batch mutation. Applies
+ * uniformly to every Catalog GraphQL mutation that takes an array input
+ * (upsert/delete/attach/detach/etc.). Centralised so a platform-side change
+ * to the cap only needs one edit.
+ */
+export const MAX_BATCH_SIZE = 500;
+
 export const READ_ONLY_ENV_VAR = "COALESCE_CATALOG_READ_ONLY";
 
 /**

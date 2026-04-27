@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { CatalogClient } from "../client.js";
+import { MAX_BATCH_SIZE } from "../constants.js";
 import {
   READ_ONLY_ANNOTATIONS,
   WRITE_ANNOTATIONS,
@@ -553,7 +554,7 @@ export function defineGovernanceTools(
               })
             )
             .min(1)
-            .max(500),
+            .max(MAX_BATCH_SIZE),
         },
         annotations: WRITE_ANNOTATIONS,
       },
@@ -586,7 +587,7 @@ export function defineGovernanceTools(
               })
             )
             .min(1)
-            .max(500),
+            .max(MAX_BATCH_SIZE),
         },
         annotations: WRITE_ANNOTATIONS,
       },
@@ -615,7 +616,7 @@ export function defineGovernanceTools(
               })
             )
             .min(1)
-            .max(500),
+            .max(MAX_BATCH_SIZE),
         },
         annotations: DESTRUCTIVE_ANNOTATIONS,
       },
@@ -646,7 +647,7 @@ export function defineGovernanceTools(
         title: "Upsert Data Quality Checks",
         description:
           "Register or update quality-check results for a single table. Unlike most mutations this one takes a single tableId with a nested array of checks (not a flat batch). Each check carries an externalId (stable identifier from the source tool), name, status, runAt, and optional description/url/columnId.\n\n" +
-          "Designed for pushing results from dbt-tests, Monte Carlo monitors, Soda checks, Great Expectations, etc. Requires READ_WRITE token. Returns the resulting QualityCheck rows.",
+          "Designed for pushing results from dbt-tests, Monte Carlo monitors, Soda checks, Great Expectations, etc. Caps at 500 checks per call (matches every other batch mutation). Requires READ_WRITE token. Returns the resulting QualityCheck rows.",
         inputSchema: {
           tableId: z.string().min(1).describe("Catalog UUID of the table."),
           qualityChecks: z
@@ -672,7 +673,7 @@ export function defineGovernanceTools(
               })
             )
             .min(1)
-            .max(500)
+            .max(MAX_BATCH_SIZE)
             .describe("Array of checks associated with this tableId."),
         },
         annotations: WRITE_ANNOTATIONS,
@@ -714,7 +715,7 @@ export function defineGovernanceTools(
               })
             )
             .min(1)
-            .max(500)
+            .max(MAX_BATCH_SIZE)
             .describe("Composite keys (tableId + externalId) of checks to remove."),
         },
         annotations: DESTRUCTIVE_ANNOTATIONS,
@@ -1058,7 +1059,7 @@ export function defineGovernanceTools(
               })
             )
             .min(1)
-            .max(500)
+            .max(MAX_BATCH_SIZE)
             .describe("Batch of pinned-asset links (max 500)."),
         },
         annotations: WRITE_ANNOTATIONS,
@@ -1107,7 +1108,7 @@ export function defineGovernanceTools(
               })
             )
             .min(1)
-            .max(500)
+            .max(MAX_BATCH_SIZE)
             .describe("Batch of pinned-asset links to remove (max 500)."),
         },
         annotations: DESTRUCTIVE_ANNOTATIONS,
