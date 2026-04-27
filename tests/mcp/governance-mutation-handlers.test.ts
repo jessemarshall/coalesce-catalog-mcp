@@ -576,44 +576,87 @@ describe("catalog_remove_pinned_assets handler", () => {
 // ---------------------------------------------------------------------------
 
 describe("governance mutations — error propagation", () => {
-  // Smoke-test that every governance mutation handler routes thrown errors
-  // through withErrorHandling instead of letting them propagate as protocol
-  // failures. The exact wrapped handler surface depends on the tool, so we
-  // pick three representative cases (one batchResult, one withConfirmation,
-  // one single-row-mutation) and assert isError + message.
-  it("upsert_user_owners surfaces transport errors as isError", async () => {
-    const { tools } = makeTools(() => {
-      throw new Error("boom upsert");
-    });
-    const tool = find(tools, "catalog_upsert_user_owners");
-    const res = await tool.handler({
-      userId: "u-1",
-      targetEntities: [{ entityType: "TABLE", entityId: "t-1" }],
-    });
-    expect(res.isError).toBe(true);
-    expect(res.content[0].text).toMatch(/boom upsert/);
-  });
-
-  it("remove_team_users surfaces transport errors as isError (under skip-confirm)", async () => {
-    const { tools } = makeTools(() => {
-      throw new Error("boom remove");
-    });
-    const tool = find(tools, "catalog_remove_team_users");
-    const res = await tool.handler(
+  // Every governance mutation handler must route thrown errors through
+  // withErrorHandling instead of letting them propagate as protocol failures.
+  // Each entry is `[toolName, args]` — args use minimal valid shapes so the
+  // throw originates at c.execute (the production failure site), not at
+  // shallower arg-coercion paths.
+  const cases: Array<[string, Record<string, unknown>]> = [
+    [
+      "catalog_create_external_links",
+      { data: [{ tableId: "t-1", technology: "GITHUB", url: "https://example.com/a" }] },
+    ],
+    [
+      "catalog_update_external_links",
+      { data: [{ id: "el-1", url: "https://example.com/b" }] },
+    ],
+    [
+      "catalog_delete_external_links",
+      { data: [{ id: "el-1" }] },
+    ],
+    [
+      "catalog_upsert_data_qualities",
+      {
+        tableId: "t-1",
+        qualityChecks: [
+          {
+            externalId: "ext-1",
+            name: "row count",
+            status: "SUCCESS",
+            runAt: "2026-04-27T00:00:00Z",
+          },
+        ],
+      },
+    ],
+    [
+      "catalog_remove_data_qualities",
+      { data: [{ id: "qc-1" }] },
+    ],
+    [
+      "catalog_upsert_user_owners",
+      { userId: "u-1", targetEntities: [{ entityType: "TABLE", entityId: "t-1" }] },
+    ],
+    [
+      "catalog_remove_user_owners",
+      { userId: "u-1" },
+    ],
+    [
+      "catalog_upsert_team_owners",
+      { teamId: "team-1", targetEntities: [{ entityType: "TABLE", entityId: "t-1" }] },
+    ],
+    [
+      "catalog_remove_team_owners",
+      { teamId: "team-1" },
+    ],
+    [
+      "catalog_upsert_team",
+      { name: "Data Eng" },
+    ],
+    [
+      "catalog_add_team_users",
       { id: "team-1", emails: ["a@example.com"] },
-      NO_EXTRA
-    );
-    expect(res.isError).toBe(true);
-    expect(res.content[0].text).toMatch(/boom remove/);
-  });
+    ],
+    [
+      "catalog_remove_team_users",
+      { id: "team-1", emails: ["a@example.com"] },
+    ],
+    [
+      "catalog_upsert_pinned_assets",
+      { data: [{ entityType: "TABLE", entityId: "t-1" }] },
+    ],
+    [
+      "catalog_remove_pinned_assets",
+      { data: [{ id: "pa-1" }] },
+    ],
+  ];
 
-  it("upsert_team surfaces transport errors as isError", async () => {
+  it.each(cases)("%s surfaces transport errors as isError", async (name, args) => {
     const { tools } = makeTools(() => {
-      throw new Error("boom team");
+      throw new Error(`boom ${name}`);
     });
-    const tool = find(tools, "catalog_upsert_team");
-    const res = await tool.handler({ name: "Data Eng" });
+    const tool = find(tools, name);
+    const res = await tool.handler(args, NO_EXTRA);
     expect(res.isError).toBe(true);
-    expect(res.content[0].text).toMatch(/boom team/);
+    expect(res.content[0].text).toMatch(new RegExp(`boom ${name}`));
   });
 });
