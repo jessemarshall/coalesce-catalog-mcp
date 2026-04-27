@@ -2,7 +2,7 @@ import { DEFAULT_REQUEST_TIMEOUT_MS } from "./constants.js";
 import {
   resolveCatalogAuth,
   type CatalogAuth,
-} from "./services/config/credentials.js";
+} from "./credentials.js";
 
 export interface ClientConfig extends CatalogAuth {
   requestTimeoutMs?: number;
