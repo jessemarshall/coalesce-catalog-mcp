@@ -610,7 +610,7 @@ describe("governance mutations — error propagation", () => {
     ],
     [
       "catalog_remove_data_qualities",
-      { data: [{ id: "qc-1" }] },
+      { qualityChecks: [{ tableId: "t-1", externalId: "ext-1" }] },
     ],
     [
       "catalog_upsert_user_owners",
@@ -642,11 +642,25 @@ describe("governance mutations — error propagation", () => {
     ],
     [
       "catalog_upsert_pinned_assets",
-      { data: [{ entityType: "TABLE", entityId: "t-1" }] },
+      {
+        data: [
+          {
+            from: { id: "t-1", type: "TABLE" },
+            to: { id: "t-2", type: "TABLE" },
+          },
+        ],
+      },
     ],
     [
       "catalog_remove_pinned_assets",
-      { data: [{ id: "pa-1" }] },
+      {
+        data: [
+          {
+            from: { id: "t-1", type: "TABLE" },
+            to: { id: "t-2", type: "TABLE" },
+          },
+        ],
+      },
     ],
   ];
 
