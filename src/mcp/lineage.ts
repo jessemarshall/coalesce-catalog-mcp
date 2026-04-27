@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { CatalogClient } from "../client.js";
+import { MAX_BATCH_SIZE } from "../constants.js";
 import {
   READ_ONLY_ANNOTATIONS,
   WRITE_ANNOTATIONS,
@@ -630,7 +631,7 @@ export function defineLineageTools(
                 )
             )
             .min(1)
-            .max(500)
+            .max(MAX_BATCH_SIZE)
             .describe("Batch of lineage edges to upsert (max 500)."),
         },
         annotations: WRITE_ANNOTATIONS,
@@ -674,7 +675,7 @@ export function defineLineageTools(
                 )
             )
             .min(1)
-            .max(500)
+            .max(MAX_BATCH_SIZE)
             .describe("Batch of lineage edges to delete (max 500)."),
         },
         annotations: DESTRUCTIVE_ANNOTATIONS,
