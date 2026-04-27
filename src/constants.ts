@@ -33,6 +33,12 @@ export const MAX_PAGE_SIZE = 500;
  * uniformly to every Catalog GraphQL mutation that takes an array input
  * (upsert/delete/attach/detach/etc.). Centralised so a platform-side change
  * to the cap only needs one edit.
+ *
+ * Scope: mutation input batches only. Workflow tools that cap output
+ * enumeration (e.g. max columns to include in a summary, max edges to
+ * traverse in a lineage walk) use their own per-workflow capacity gates and
+ * intentionally do NOT route through this constant — they're shaped by
+ * agent-context budget, not the API contract.
  */
 export const MAX_BATCH_SIZE = 500;
 
