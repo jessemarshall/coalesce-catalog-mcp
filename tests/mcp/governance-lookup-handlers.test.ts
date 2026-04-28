@@ -1,22 +1,24 @@
 import { describe, it, expect } from "vitest";
 import { defineGovernanceTools } from "../../src/mcp/governance.js";
 import { GET_USERS, GET_TEAMS } from "../../src/catalog/operations.js";
+import {
+  USER_PAGE_SIZE as LOOKUP_PAGE_SIZE,
+  USER_LOOKUP_MAX_PAGES as LOOKUP_MAX_PAGES,
+} from "../../src/workflows/shared.js";
 import { makeMockClient } from "../helpers/mock-client.js";
 
 // These three tools all share the same iteration shape — page through
-// getUsers / getTeams (500 per page, max 20 pages) until the target id is
-// found, then slice the corresponding array of asset / member IDs by the
-// caller's pagination input. They expose three branches the handler-level
-// tests need to cover:
+// getUsers / getTeams until the target id is found, then slice the
+// corresponding array of asset / member IDs by the caller's pagination
+// input. They expose three branches the handler-level tests need to cover:
 //   1. found-in-first-page (the common path)
 //   2. found-after-multi-page-iteration
 //   3. notFound — short-circuit when a partial page comes back
-//   4. notFound — ceiling hit after 20 full pages
+//   4. notFound — ceiling hit after the cap
 // plus the sliceAssetIds pagination math (totalCount, hasMore, partial last
-// page, empty array).
-
-const LOOKUP_PAGE_SIZE = 500;
-const LOOKUP_MAX_PAGES = 20;
+// page, empty array). LOOKUP_PAGE_SIZE / LOOKUP_MAX_PAGES are re-exported
+// from workflows/shared.ts so tenant-scaling changes flow through here too —
+// otherwise the ceiling-branch tests would silently desync from production.
 
 function makeTools(responder: Parameters<typeof makeMockClient>[0]) {
   const mock = makeMockClient(responder);
