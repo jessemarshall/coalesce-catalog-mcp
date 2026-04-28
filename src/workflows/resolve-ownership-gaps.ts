@@ -18,7 +18,6 @@ import {
   fetchTableQueryAuthors,
   fetchOneHopNeighborIds,
   type NeighborOwner,
-  type NeighborRef,
   type QueryAuthorSignal,
 } from "./shared.js";
 

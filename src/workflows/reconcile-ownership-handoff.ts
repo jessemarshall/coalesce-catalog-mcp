@@ -135,8 +135,6 @@ interface DetailedTerm {
   linkedTag?: { id?: string | null; label?: string | null } | null;
 }
 
-type OwnedAssetKind = "TABLE" | "DASHBOARD" | "TERM";
-
 // ── Asset hydration ─────────────────────────────────────────────────────────
 
 async function hydrateByIds<TRow>(
