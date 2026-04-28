@@ -436,8 +436,7 @@ function categorizeDashboards(
 
 function categorizeTerms(
   terms: DetailedTerm[],
-  termIdsWithOutboundPins: Set<string>,
-  opts: CategoryOpts
+  termIdsWithOutboundPins: Set<string>
 ): TermFindings {
   const isOrphaned = (t: DetailedTerm): boolean => {
     const noLinkedTag = !t.linkedTag;
@@ -581,7 +580,7 @@ export function defineOwnerScorecard(
         },
         terms: {
           total: terms.length,
-          findings: categorizeTerms(terms, termsWithPins, opts),
+          findings: categorizeTerms(terms, termsWithPins),
         },
         unclassified_owned_ids: unclassifiedOwnedIds,
       };
