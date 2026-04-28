@@ -23,10 +23,12 @@ import type {
 
 export const ENRICHMENT_BATCH_SIZE = 500;
 
-// Shared user-page-scan ceiling. The public API has no user-by-email endpoint,
-// so any workflow that needs to resolve an email to a user iterates pages
-// until it finds a match or blows the cap. Kept identical to
-// governance.ts:findUserById so both lookups refuse at the same boundary.
+// Shared directory page-scan ceiling. The public API has no user-by-email
+// or team-by-id endpoint, so any workflow or governance helper that needs
+// to resolve identity → row iterates `getUsers` / `getTeams` pages until it
+// finds a match or blows the cap. Used by `resolveUserByEmail` here, plus
+// `findUserById` / `findTeamById` in `mcp/governance.ts`. Single source of
+// truth so all lookups refuse at the same boundary by construction.
 export const USER_PAGE_SIZE = 500;
 export const USER_LOOKUP_MAX_PAGES = 20;
 
