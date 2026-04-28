@@ -129,7 +129,7 @@ describe("catalog_get_user_owned_assets handler", () => {
     }
   });
 
-  it("returns notFound when a partial page comes back without a match", async () => {
+  it("returns notFound (absent — full directory scanned) when a partial page comes back without a match", async () => {
     const { client, tools } = makeTools(() => ({
       getUsers: fillerUsers(10),
     }));
@@ -140,25 +140,39 @@ describe("catalog_get_user_owned_assets handler", () => {
       notFound: true;
       userId: string;
       reason: string;
+      scanCeilingHit?: boolean;
+      usersScanned?: number;
     };
     expect(parsed.notFound).toBe(true);
     expect(parsed.userId).toBe("u-missing");
-    expect(parsed.reason).toMatch(/not found/i);
+    // Absent branch must NOT advertise itself as a ceiling hit — the user
+    // really doesn't exist. The reason should call out a complete scan.
+    expect(parsed.scanCeilingHit).toBeUndefined();
+    expect(parsed.usersScanned).toBeUndefined();
+    expect(parsed.reason).toMatch(/full user directory was scanned/i);
     // A partial page (< 500 rows) is sufficient evidence that the user
     // doesn't exist — the iterator must stop after that single call.
     expect(client.calls).toHaveLength(1);
   });
 
-  it("returns notFound after the 10k-user ceiling without a match", async () => {
+  it("returns notFound (ceiling) after the 10k-user ceiling without a match", async () => {
     const { client, tools } = makeTools(() => ({
       getUsers: fillerUsers(LOOKUP_PAGE_SIZE),
     }));
     const tool = findIn(tools, "catalog_get_user_owned_assets");
 
     const res = await tool.handler({ userId: "u-missing" });
-    const parsed = parseResult(res) as { notFound: true; reason: string };
+    const parsed = parseResult(res) as {
+      notFound: true;
+      reason: string;
+      scanCeilingHit?: boolean;
+      usersScanned?: number;
+    };
     expect(parsed.notFound).toBe(true);
     expect(parsed.reason).toMatch(/10,?000/);
+    expect(parsed.reason).toMatch(/scan ceiling/i);
+    expect(parsed.scanCeilingHit).toBe(true);
+    expect(parsed.usersScanned).toBe(LOOKUP_PAGE_SIZE * LOOKUP_MAX_PAGES);
     expect(client.calls).toHaveLength(LOOKUP_MAX_PAGES);
   });
 
@@ -264,7 +278,7 @@ describe("catalog_get_team_members handler", () => {
     expect(client.calls).toHaveLength(2);
   });
 
-  it("returns notFound when a partial page comes back without a match", async () => {
+  it("returns notFound (absent) when a partial page comes back without a match", async () => {
     const { client, tools } = makeTools(() => ({ getTeams: fillerTeams(5) }));
     const tool = findIn(tools, "catalog_get_team_members");
 
@@ -273,22 +287,35 @@ describe("catalog_get_team_members handler", () => {
       notFound: true;
       teamId: string;
       reason: string;
+      scanCeilingHit?: boolean;
+      teamsScanned?: number;
     };
     expect(parsed.notFound).toBe(true);
     expect(parsed.teamId).toBe("t-missing");
+    expect(parsed.scanCeilingHit).toBeUndefined();
+    expect(parsed.teamsScanned).toBeUndefined();
+    expect(parsed.reason).toMatch(/full team directory was scanned/i);
     expect(client.calls).toHaveLength(1);
   });
 
-  it("returns notFound after the 10k-team ceiling without a match", async () => {
+  it("returns notFound (ceiling) after the 10k-team ceiling without a match", async () => {
     const { client, tools } = makeTools(() => ({
       getTeams: fillerTeams(LOOKUP_PAGE_SIZE),
     }));
     const tool = findIn(tools, "catalog_get_team_members");
 
     const res = await tool.handler({ teamId: "t-missing" });
-    const parsed = parseResult(res) as { notFound: true; reason: string };
+    const parsed = parseResult(res) as {
+      notFound: true;
+      reason: string;
+      scanCeilingHit?: boolean;
+      teamsScanned?: number;
+    };
     expect(parsed.notFound).toBe(true);
     expect(parsed.reason).toMatch(/10,?000/);
+    expect(parsed.reason).toMatch(/scan ceiling/i);
+    expect(parsed.scanCeilingHit).toBe(true);
+    expect(parsed.teamsScanned).toBe(LOOKUP_PAGE_SIZE * LOOKUP_MAX_PAGES);
     expect(client.calls).toHaveLength(LOOKUP_MAX_PAGES);
   });
 
@@ -344,13 +371,38 @@ describe("catalog_get_team_owned_assets handler", () => {
     expect(parsed.pagination.hasMore).toBe(true);
   });
 
-  it("returns notFound when the team is missing", async () => {
+  it("returns notFound (absent) when the team is missing", async () => {
     const { tools } = makeTools(() => ({ getTeams: fillerTeams(3) }));
     const tool = findIn(tools, "catalog_get_team_owned_assets");
 
     const res = await tool.handler({ teamId: "t-missing" });
-    const parsed = parseResult(res) as { notFound: true; teamId: string };
+    const parsed = parseResult(res) as {
+      notFound: true;
+      teamId: string;
+      reason: string;
+      scanCeilingHit?: boolean;
+    };
     expect(parsed.notFound).toBe(true);
     expect(parsed.teamId).toBe("t-missing");
+    expect(parsed.scanCeilingHit).toBeUndefined();
+    expect(parsed.reason).toMatch(/full team directory was scanned/i);
+  });
+
+  it("returns notFound (ceiling) when the team scan exhausts the cap", async () => {
+    const { tools } = makeTools(() => ({
+      getTeams: fillerTeams(LOOKUP_PAGE_SIZE),
+    }));
+    const tool = findIn(tools, "catalog_get_team_owned_assets");
+
+    const res = await tool.handler({ teamId: "t-missing" });
+    const parsed = parseResult(res) as {
+      notFound: true;
+      reason: string;
+      scanCeilingHit?: boolean;
+      teamsScanned?: number;
+    };
+    expect(parsed.scanCeilingHit).toBe(true);
+    expect(parsed.teamsScanned).toBe(LOOKUP_PAGE_SIZE * LOOKUP_MAX_PAGES);
+    expect(parsed.reason).toMatch(/scan ceiling/i);
   });
 });

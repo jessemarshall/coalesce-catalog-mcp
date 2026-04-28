@@ -128,36 +128,49 @@ function detailTeam(team: GetTeamsOutput): DetailedTeam {
 const LOOKUP_PAGE_SIZE = 500;
 const LOOKUP_MAX_PAGES = 20;
 
+// Discriminated resolution mirrors workflows/shared.ts:OwnerResolution. We
+// distinguish "user/team confirmed absent" (a short page closed the scan
+// without a match — they really don't exist in the workspace) from "scan
+// ceiling hit" (LOOKUP_MAX_PAGES full pages exhausted without a match — they
+// might exist past the ceiling). The two outcomes warrant different agent
+// guidance, so the tool messages should differ too.
+type LookupResolution<T> =
+  | { kind: "found"; row: T }
+  | { kind: "absent" }
+  | { kind: "ceiling"; scanned: number };
+
+const LOOKUP_CEILING = LOOKUP_PAGE_SIZE * LOOKUP_MAX_PAGES;
+
 async function findUserById(
   client: CatalogClient,
   userId: string
-): Promise<GetUsersOutput | null> {
+): Promise<LookupResolution<GetUsersOutput>> {
   for (let page = 0; page < LOOKUP_MAX_PAGES; page++) {
     const data = await client.execute<{ getUsers: GetUsersOutput[] }>(
       GET_USERS,
       { pagination: { nbPerPage: LOOKUP_PAGE_SIZE, page } }
     );
     const match = data.getUsers.find((u) => u.id === userId);
-    if (match) return match;
-    if (data.getUsers.length < LOOKUP_PAGE_SIZE) return null;
+    if (match) return { kind: "found", row: match };
+    if (data.getUsers.length < LOOKUP_PAGE_SIZE) return { kind: "absent" };
   }
-  return null;
+  return { kind: "ceiling", scanned: LOOKUP_CEILING };
 }
 
 async function findTeamById(
   client: CatalogClient,
   teamId: string
-): Promise<GetTeamsOutput | null> {
+): Promise<LookupResolution<GetTeamsOutput>> {
   for (let page = 0; page < LOOKUP_MAX_PAGES; page++) {
     const data = await client.execute<{ getTeams: GetTeamsOutput[] }>(
       GET_TEAMS,
       { pagination: { nbPerPage: LOOKUP_PAGE_SIZE, page } }
     );
     const match = data.getTeams.find((t) => t.id === teamId);
-    if (match) return match;
-    if (data.getTeams.length < LOOKUP_PAGE_SIZE) return null;
+    if (match) return { kind: "found", row: match };
+    if (data.getTeams.length < LOOKUP_PAGE_SIZE) return { kind: "absent" };
   }
-  return null;
+  return { kind: "ceiling", scanned: LOOKUP_CEILING };
 }
 
 function sliceAssetIds(
@@ -386,7 +399,7 @@ export function defineGovernanceTools(
         description:
           "Return the paginated list of asset UUIDs owned by a given user, anchored by `userId`. Use this when you already have a Catalog user UUID and want the owned-asset list in pages (e.g. drilling into a user surfaced by another tool, or paginating through a user who owns 10k+ assets).\n\n" +
           "**If you only have an email**, prefer `catalog_search_users({ projection: \"detailed\" })` — it page-scans once and inlines `ownedAssetIds` on the matched row, avoiding the double scan this tool would otherwise perform (once to resolve the user, then again internally for the asset list).\n\n" +
-          "Implementation note: the public API has no direct user-by-id endpoint, so this tool iterates `getUsers` pages of 500 until it finds the target. The cap is 10k users (20 pages); beyond that it returns notFound with a hint. The returned IDs are heterogeneous (tables, dashboards, terms) — hydrate via catalog_get_table / catalog_get_dashboard / catalog_search_terms{ids} as needed.",
+          "Implementation note: the public API has no direct user-by-id endpoint, so this tool iterates `getUsers` pages of 500 until it finds the target. The cap is 10k users (20 pages); beyond that it returns `{ notFound: true, scanCeilingHit: true, usersScanned }`, distinct from the absent case (`{ notFound: true }` with no ceiling fields) where the directory was fully scanned and the user genuinely doesn't exist. The returned IDs are heterogeneous (tables, dashboards, terms) — hydrate via catalog_get_table / catalog_get_dashboard / catalog_search_terms{ids} as needed.",
         inputSchema: {
           userId: z.string().min(1).describe("Catalog UUID of the user."),
           ...PaginationInputShape,
@@ -395,17 +408,27 @@ export function defineGovernanceTools(
       },
       handler: withErrorHandling(async (args, c) => {
         const pagination = toGraphQLPagination(args as PaginationInput);
-        const user = await findUserById(c, args.userId as string);
-        if (!user) {
+        const resolution = await findUserById(c, args.userId as string);
+        if (resolution.kind === "absent") {
           return {
             notFound: true,
             userId: args.userId,
             reason:
-              "User not found within the first 10,000 accounts scanned. The API has no per-id lookup, so this tool may miss very large tenants — narrow via catalog_search_users if needed.",
+              "User not found. The full user directory was scanned and no account matched this UUID.",
+          };
+        }
+        if (resolution.kind === "ceiling") {
+          return {
+            notFound: true,
+            userId: args.userId,
+            reason:
+              `User not found within the first ${resolution.scanned} accounts scanned. The API has no per-id lookup, so this tool may miss very large tenants past the scan ceiling — narrow via catalog_search_users if the user definitely exists.`,
+            scanCeilingHit: true,
+            usersScanned: resolution.scanned,
           };
         }
         return sliceAssetIds(
-          user.ownedAssetIds,
+          resolution.row.ownedAssetIds,
           pagination.page,
           pagination.nbPerPage
         );
@@ -428,17 +451,27 @@ export function defineGovernanceTools(
       },
       handler: withErrorHandling(async (args, c) => {
         const pagination = toGraphQLPagination(args as PaginationInput);
-        const team = await findTeamById(c, args.teamId as string);
-        if (!team) {
+        const resolution = await findTeamById(c, args.teamId as string);
+        if (resolution.kind === "absent") {
           return {
             notFound: true,
             teamId: args.teamId,
             reason:
-              "Team not found within the first 10,000 teams scanned.",
+              "Team not found. The full team directory was scanned and no team matched this UUID.",
+          };
+        }
+        if (resolution.kind === "ceiling") {
+          return {
+            notFound: true,
+            teamId: args.teamId,
+            reason:
+              `Team not found within the first ${resolution.scanned} teams scanned. The API has no per-id lookup, so this tool may miss very large tenants past the scan ceiling.`,
+            scanCeilingHit: true,
+            teamsScanned: resolution.scanned,
           };
         }
         return sliceAssetIds(
-          team.memberIds,
+          resolution.row.memberIds,
           pagination.page,
           pagination.nbPerPage
         );
@@ -461,17 +494,27 @@ export function defineGovernanceTools(
       },
       handler: withErrorHandling(async (args, c) => {
         const pagination = toGraphQLPagination(args as PaginationInput);
-        const team = await findTeamById(c, args.teamId as string);
-        if (!team) {
+        const resolution = await findTeamById(c, args.teamId as string);
+        if (resolution.kind === "absent") {
           return {
             notFound: true,
             teamId: args.teamId,
             reason:
-              "Team not found within the first 10,000 teams scanned.",
+              "Team not found. The full team directory was scanned and no team matched this UUID.",
+          };
+        }
+        if (resolution.kind === "ceiling") {
+          return {
+            notFound: true,
+            teamId: args.teamId,
+            reason:
+              `Team not found within the first ${resolution.scanned} teams scanned. The API has no per-id lookup, so this tool may miss very large tenants past the scan ceiling.`,
+            scanCeilingHit: true,
+            teamsScanned: resolution.scanned,
           };
         }
         return sliceAssetIds(
-          team.ownedAssetIds,
+          resolution.row.ownedAssetIds,
           pagination.page,
           pagination.nbPerPage
         );
