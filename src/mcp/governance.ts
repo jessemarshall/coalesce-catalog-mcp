@@ -2,6 +2,10 @@ import { z } from "zod";
 import type { CatalogClient } from "../client.js";
 import { MAX_BATCH_SIZE } from "../constants.js";
 import {
+  USER_PAGE_SIZE,
+  USER_LOOKUP_MAX_PAGES,
+} from "../workflows/shared.js";
+import {
   READ_ONLY_ANNOTATIONS,
   WRITE_ANNOTATIONS,
   DESTRUCTIVE_ANNOTATIONS,
@@ -124,35 +128,36 @@ function detailTeam(team: GetTeamsOutput): DetailedTeam {
 // ── Find-by-id helpers for the dedicated lookup tools ───────────────────────
 // The public API has no user-by-id or team-by-id endpoint. The dedicated
 // lookup tools (catalog_get_user_owned_assets etc.) iterate pages until the
-// target is found or the cap is hit.
-const LOOKUP_PAGE_SIZE = 500;
-const LOOKUP_MAX_PAGES = 20;
+// target is found or the cap is hit. Page-size and max-pages are sourced
+// from workflows/shared.ts so any future tenant-scaling tweak only needs to
+// move one pair of constants — workflows/shared.ts:resolveUserByEmail and
+// these helpers refuse at the same boundary by construction.
 
 // Discriminated resolution mirrors workflows/shared.ts:OwnerResolution. We
 // distinguish "user/team confirmed absent" (a short page closed the scan
 // without a match — they really don't exist in the workspace) from "scan
-// ceiling hit" (LOOKUP_MAX_PAGES full pages exhausted without a match — they
-// might exist past the ceiling). The two outcomes warrant different agent
-// guidance, so the tool messages should differ too.
+// ceiling hit" (USER_LOOKUP_MAX_PAGES full pages exhausted without a match —
+// they might exist past the ceiling). The two outcomes warrant different
+// agent guidance, so the tool messages should differ too.
 type LookupResolution<T> =
   | { kind: "found"; row: T }
   | { kind: "absent" }
   | { kind: "ceiling"; scanned: number };
 
-const LOOKUP_CEILING = LOOKUP_PAGE_SIZE * LOOKUP_MAX_PAGES;
+const LOOKUP_CEILING = USER_PAGE_SIZE * USER_LOOKUP_MAX_PAGES;
 
 async function findUserById(
   client: CatalogClient,
   userId: string
 ): Promise<LookupResolution<GetUsersOutput>> {
-  for (let page = 0; page < LOOKUP_MAX_PAGES; page++) {
+  for (let page = 0; page < USER_LOOKUP_MAX_PAGES; page++) {
     const data = await client.execute<{ getUsers: GetUsersOutput[] }>(
       GET_USERS,
-      { pagination: { nbPerPage: LOOKUP_PAGE_SIZE, page } }
+      { pagination: { nbPerPage: USER_PAGE_SIZE, page } }
     );
     const match = data.getUsers.find((u) => u.id === userId);
     if (match) return { kind: "found", row: match };
-    if (data.getUsers.length < LOOKUP_PAGE_SIZE) return { kind: "absent" };
+    if (data.getUsers.length < USER_PAGE_SIZE) return { kind: "absent" };
   }
   return { kind: "ceiling", scanned: LOOKUP_CEILING };
 }
@@ -161,14 +166,14 @@ async function findTeamById(
   client: CatalogClient,
   teamId: string
 ): Promise<LookupResolution<GetTeamsOutput>> {
-  for (let page = 0; page < LOOKUP_MAX_PAGES; page++) {
+  for (let page = 0; page < USER_LOOKUP_MAX_PAGES; page++) {
     const data = await client.execute<{ getTeams: GetTeamsOutput[] }>(
       GET_TEAMS,
-      { pagination: { nbPerPage: LOOKUP_PAGE_SIZE, page } }
+      { pagination: { nbPerPage: USER_PAGE_SIZE, page } }
     );
     const match = data.getTeams.find((t) => t.id === teamId);
     if (match) return { kind: "found", row: match };
-    if (data.getTeams.length < LOOKUP_PAGE_SIZE) return { kind: "absent" };
+    if (data.getTeams.length < USER_PAGE_SIZE) return { kind: "absent" };
   }
   return { kind: "ceiling", scanned: LOOKUP_CEILING };
 }
@@ -442,7 +447,7 @@ export function defineGovernanceTools(
         description:
           "Return the paginated list of user UUIDs belonging to a team, anchored by `teamId`. Use this when you already have a Catalog team UUID and want the membership list in pages.\n\n" +
           "**If you only have a team name**, prefer `catalog_search_teams({ projection: \"detailed\" })` — it page-scans once and inlines `memberIds` on every row, avoiding the double scan this tool performs internally.\n\n" +
-          "Same iteration strategy as catalog_get_user_owned_assets — scans up to 10k teams.",
+          "Implementation note: the public API has no direct team-by-id endpoint, so this tool iterates `getTeams` pages of 500 until it finds the target. The cap is 10k teams (20 pages); beyond that it returns `{ notFound: true, scanCeilingHit: true, teamsScanned }`, distinct from the absent case (`{ notFound: true }` with no ceiling fields) where the directory was fully scanned and the team genuinely doesn't exist — mirroring the catalog_get_user_owned_assets envelope.",
         inputSchema: {
           teamId: z.string().min(1).describe("Catalog UUID of the team."),
           ...PaginationInputShape,
@@ -485,7 +490,7 @@ export function defineGovernanceTools(
         description:
           "Return the paginated list of asset UUIDs owned by a given team, anchored by `teamId`. Use this when you already have a Catalog team UUID and want the owned-asset list in pages.\n\n" +
           "**If you only have a team name**, prefer `catalog_search_teams({ projection: \"detailed\" })` — it page-scans once and inlines `ownedAssetIds` on every row, avoiding the double scan this tool performs internally.\n\n" +
-          "Same iteration strategy as catalog_get_user_owned_assets.",
+          "Implementation note: the public API has no direct team-by-id endpoint, so this tool iterates `getTeams` pages of 500 until it finds the target. The cap is 10k teams (20 pages); beyond that it returns `{ notFound: true, scanCeilingHit: true, teamsScanned }`, distinct from the absent case (`{ notFound: true }` with no ceiling fields) where the directory was fully scanned and the team genuinely doesn't exist — mirroring the catalog_get_user_owned_assets envelope.",
         inputSchema: {
           teamId: z.string().min(1).describe("Catalog UUID of the team."),
           ...PaginationInputShape,
