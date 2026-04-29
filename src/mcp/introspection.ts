@@ -5,6 +5,7 @@ import {
   type CatalogToolDefinition,
 } from "../catalog/types.js";
 import { isReadOnlyMode } from "../server.js";
+import { editDistance } from "../util/edit-distance.js";
 import { withErrorHandling } from "./tool-helpers.js";
 
 // ── catalog_describe_type ───────────────────────────────────────────────────
@@ -140,29 +141,6 @@ function flattenField(f: IntrospectedField): {
     description: f.description,
     isRequired: isFieldRequired(f.type),
   };
-}
-
-/** Iterative Levenshtein edit distance (O(len * len) space/time). */
-function editDistance(a: string, b: string): number {
-  if (a === b) return 0;
-  if (a.length === 0) return b.length;
-  if (b.length === 0) return a.length;
-  const prev = new Array(b.length + 1);
-  const curr = new Array(b.length + 1);
-  for (let j = 0; j <= b.length; j++) prev[j] = j;
-  for (let i = 1; i <= a.length; i++) {
-    curr[0] = i;
-    for (let j = 1; j <= b.length; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      curr[j] = Math.min(
-        curr[j - 1] + 1,
-        prev[j] + 1,
-        prev[j - 1] + cost
-      );
-    }
-    for (let j = 0; j <= b.length; j++) prev[j] = curr[j];
-  }
-  return prev[b.length];
 }
 
 /**
