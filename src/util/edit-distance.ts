@@ -9,10 +9,14 @@
  */
 export function editDistance(a: string, b: string): number {
   if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+
+  // Ensure b is the shorter string so the row buffers are sized to min(la, lb).
+  // Edit distance is symmetric, so swapping the operands does not change the result.
+  if (a.length < b.length) [a, b] = [b, a];
   const la = a.length;
   const lb = b.length;
-  if (la === 0) return lb;
-  if (lb === 0) return la;
 
   let prev = Array.from({ length: lb + 1 }, (_, i) => i);
   let curr = new Array<number>(lb + 1);
