@@ -146,37 +146,35 @@ type LookupResolution<T> =
 
 const LOOKUP_CEILING = USER_PAGE_SIZE * USER_LOOKUP_MAX_PAGES;
 
-async function findUserById(
+async function findById<T extends { id: string }, K extends string>(
   client: CatalogClient,
-  userId: string
-): Promise<LookupResolution<GetUsersOutput>> {
+  document: string,
+  responseKey: K,
+  targetId: string
+): Promise<LookupResolution<T>> {
   for (let page = 0; page < USER_LOOKUP_MAX_PAGES; page++) {
-    const data = await client.execute<{ getUsers: GetUsersOutput[] }>(
-      GET_USERS,
-      { pagination: { nbPerPage: USER_PAGE_SIZE, page } }
-    );
-    const match = data.getUsers.find((u) => u.id === userId);
+    const data = await client.execute<Record<K, T[]>>(document, {
+      pagination: { nbPerPage: USER_PAGE_SIZE, page },
+    });
+    const rows = data[responseKey];
+    const match = rows.find((r) => r.id === targetId);
     if (match) return { kind: "found", row: match };
-    if (data.getUsers.length < USER_PAGE_SIZE) return { kind: "absent" };
+    if (rows.length < USER_PAGE_SIZE) return { kind: "absent" };
   }
   return { kind: "ceiling", scanned: LOOKUP_CEILING };
 }
 
-async function findTeamById(
+const findUserById = (
+  client: CatalogClient,
+  userId: string
+): Promise<LookupResolution<GetUsersOutput>> =>
+  findById<GetUsersOutput, "getUsers">(client, GET_USERS, "getUsers", userId);
+
+const findTeamById = (
   client: CatalogClient,
   teamId: string
-): Promise<LookupResolution<GetTeamsOutput>> {
-  for (let page = 0; page < USER_LOOKUP_MAX_PAGES; page++) {
-    const data = await client.execute<{ getTeams: GetTeamsOutput[] }>(
-      GET_TEAMS,
-      { pagination: { nbPerPage: USER_PAGE_SIZE, page } }
-    );
-    const match = data.getTeams.find((t) => t.id === teamId);
-    if (match) return { kind: "found", row: match };
-    if (data.getTeams.length < USER_PAGE_SIZE) return { kind: "absent" };
-  }
-  return { kind: "ceiling", scanned: LOOKUP_CEILING };
-}
+): Promise<LookupResolution<GetTeamsOutput>> =>
+  findById<GetTeamsOutput, "getTeams">(client, GET_TEAMS, "getTeams", teamId);
 
 function sliceAssetIds(
   ids: readonly string[] | undefined,
