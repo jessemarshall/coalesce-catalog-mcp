@@ -16,6 +16,7 @@ import type {
   GetDashboardsOutput,
 } from "../generated/types.js";
 import { withErrorHandling } from "../mcp/tool-helpers.js";
+import { editDistance } from "../util/edit-distance.js";
 
 // ── Input schema ────────────────────────────────────────────────────────────
 
@@ -66,33 +67,6 @@ const DEFAULT_MAX_ASSETS = 500;
 const DEFAULT_NEAR_DUPLICATE_THRESHOLD = 2;
 const SKEW_THRESHOLD = 0.8;
 const SKEW_MIN_USAGE = 5;
-
-// ── Levenshtein edit distance ───────────────────────────────────────────────
-
-function editDistance(a: string, b: string): number {
-  const la = a.length;
-  const lb = b.length;
-  if (la === 0) return lb;
-  if (lb === 0) return la;
-
-  // Single-row DP to keep memory O(min(la, lb)).
-  let prev = Array.from({ length: lb + 1 }, (_, i) => i);
-  let curr = new Array<number>(lb + 1);
-
-  for (let i = 1; i <= la; i++) {
-    curr[0] = i;
-    for (let j = 1; j <= lb; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      curr[j] = Math.min(
-        prev[j] + 1, // deletion
-        curr[j - 1] + 1, // insertion
-        prev[j - 1] + cost // substitution
-      );
-    }
-    [prev, curr] = [curr, prev];
-  }
-  return prev[lb];
-}
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
