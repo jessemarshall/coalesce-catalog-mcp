@@ -834,7 +834,8 @@ export function defineGovernanceTools(
       config: {
         title: "Remove User Ownership",
         description:
-          "Strip a user's ownership of specified assets (or of all their assets if targetEntities is omitted). Irreversible within the scope of the removal.",
+          "Strip a user's ownership of specified assets (or of all their assets if targetEntities is omitted). Irreversible within the scope of the removal.\n\n" +
+          "Returns a boolean success flag, plus `requestedCount` (echo of `targetEntities.length`) when `targetEntities` is supplied — omitted on the strip-from-ALL path because the caller did not bound the scope. The API has no per-row result, so partial failures within a supplied batch are not detectable.",
         inputSchema: {
           userId: z.string().min(1).describe("Catalog UUID of the user."),
           targetEntities: z
@@ -922,7 +923,8 @@ export function defineGovernanceTools(
       config: {
         title: "Remove Team Ownership",
         description:
-          "Strip a team's ownership of specified assets (or of all their assets if targetEntities is omitted). Irreversible within the scope of the removal.",
+          "Strip a team's ownership of specified assets (or of all their assets if targetEntities is omitted). Irreversible within the scope of the removal.\n\n" +
+          "Returns a boolean success flag, plus `requestedCount` (echo of `targetEntities.length`) when `targetEntities` is supplied — omitted on the strip-from-ALL path because the caller did not bound the scope. The API has no per-row result, so partial failures within a supplied batch are not detectable.",
         inputSchema: {
           teamId: z.string().min(1).describe("Catalog UUID of the team."),
           targetEntities: z
