@@ -334,6 +334,7 @@ describe("catalog_remove_user_owners handler", () => {
     const parsed = parseResult(res);
     expect(parsed.success).toBe(true);
     expect(parsed.userId).toBe("u-1");
+    expect(parsed.requestedCount).toBe(1);
   });
 
   it("omits targetEntities when not supplied (strip-from-all semantics)", async () => {
@@ -342,10 +343,12 @@ describe("catalog_remove_user_owners handler", () => {
     // that by leaving targetEntities out of the GraphQL variables entirely.
     const { client, tools } = makeTools(() => ({ removeUserOwners: true }));
     const tool = find(tools, "catalog_remove_user_owners");
-    await tool.handler({ userId: "u-1" }, NO_EXTRA);
+    const res = await tool.handler({ userId: "u-1" }, NO_EXTRA);
     const vars = client.calls[0].variables as { data: Record<string, unknown> };
     expect(vars.data).toEqual({ userId: "u-1" });
     expect("targetEntities" in vars.data).toBe(false);
+    const parsed = parseResult(res);
+    expect("requestedCount" in parsed).toBe(false);
   });
 });
 
@@ -376,10 +379,12 @@ describe("catalog_remove_team_owners handler", () => {
   it("omits targetEntities when not supplied (strip-from-all semantics)", async () => {
     const { client, tools } = makeTools(() => ({ removeTeamOwners: true }));
     const tool = find(tools, "catalog_remove_team_owners");
-    await tool.handler({ teamId: "team-1" }, NO_EXTRA);
+    const res = await tool.handler({ teamId: "team-1" }, NO_EXTRA);
     const vars = client.calls[0].variables as { data: Record<string, unknown> };
     expect(vars.data).toEqual({ teamId: "team-1" });
     expect("targetEntities" in vars.data).toBe(false);
+    const parsed = parseResult(res);
+    expect("requestedCount" in parsed).toBe(false);
   });
 
   it("forwards targetEntities when supplied (scoped removal)", async () => {
@@ -399,6 +404,7 @@ describe("catalog_remove_team_owners handler", () => {
     });
     const parsed = parseResult(res);
     expect(parsed.teamId).toBe("team-1");
+    expect(parsed.requestedCount).toBe(1);
   });
 });
 
