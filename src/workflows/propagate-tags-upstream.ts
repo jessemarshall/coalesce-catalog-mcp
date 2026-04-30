@@ -19,7 +19,7 @@ import type {
 } from "../generated/types.js";
 import { withErrorHandling } from "../mcp/tool-helpers.js";
 import { withConfirmation } from "../mcp/confirmation.js";
-import { ENRICHMENT_BATCH_SIZE, chunk } from "./shared.js";
+import { ENRICHMENT_BATCH_SIZE, chunk, extractTagLabels } from "./shared.js";
 
 type OverwritePolicy = "ifEmpty" | "overwrite";
 type SourceAssetType = "TABLE" | "DASHBOARD";
@@ -126,17 +126,6 @@ interface TargetPlan {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-
-function extractTagLabels(row: Record<string, unknown>): string[] {
-  if (!Array.isArray(row.tagEntities)) return [];
-  const out: string[] = [];
-  for (const t of row.tagEntities as Array<Record<string, unknown>>) {
-    const tag = t.tag as Record<string, unknown> | undefined;
-    const label = tag?.label;
-    if (typeof label === "string" && label.length > 0) out.push(label);
-  }
-  return out;
-}
 
 async function fetchSourceAsset(
   client: CatalogClient,

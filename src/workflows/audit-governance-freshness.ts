@@ -7,7 +7,7 @@ import {
 import { GET_TABLES_DETAIL_BATCH } from "../catalog/operations.js";
 import type { GetTablesOutput } from "../generated/types.js";
 import { withErrorHandling } from "../mcp/tool-helpers.js";
-import { extractOwners, type Owners } from "./shared.js";
+import { extractOwners, extractTagLabels, type Owners } from "./shared.js";
 
 // ── Input schema ────────────────────────────────────────────────────────────
 
@@ -167,17 +167,6 @@ function normalisePolicy(raw: unknown): CadencePolicy {
     return { defaultDays, byTag };
   }
   return { defaultDays: DEFAULT_CADENCE_DAYS, byTag: [] };
-}
-
-function tableTagLabels(row: Record<string, unknown>): string[] {
-  if (!Array.isArray(row.tagEntities)) return [];
-  const out: string[] = [];
-  for (const t of row.tagEntities as Array<Record<string, unknown>>) {
-    const tag = t.tag as Record<string, unknown> | undefined;
-    const label = tag?.label;
-    if (typeof label === "string" && label.length > 0) out.push(label);
-  }
-  return out;
 }
 
 function pickRequiredCadence(
@@ -379,7 +368,7 @@ export function defineAuditGovernanceFreshness(
       }
 
       const rows: FreshnessRow[] = tables.map((row) => {
-        const tagLabels = tableTagLabels(row);
+        const tagLabels = extractTagLabels(row);
         const { requiredDays, matched } = pickRequiredCadence(tagLabels, policy);
         const isVerified = row.isVerified === true;
         const verifiedAt = parseTimestamp(row.verifiedAt);

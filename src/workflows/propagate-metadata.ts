@@ -32,6 +32,7 @@ import {
   ENRICHMENT_BATCH_SIZE,
   isNonEmptyString,
   extractOwners,
+  extractTagLabels,
   chunk,
   type Owners,
 } from "./shared.js";
@@ -147,17 +148,6 @@ interface TargetPlan {
     tags?: TagsChange;
     owners?: OwnersChange;
   };
-}
-
-function extractTagLabels(row: Record<string, unknown>): string[] {
-  if (!Array.isArray(row.tagEntities)) return [];
-  const out: string[] = [];
-  for (const t of row.tagEntities as Array<Record<string, unknown>>) {
-    const tag = t.tag as Record<string, unknown> | undefined;
-    const label = tag?.label;
-    if (typeof label === "string" && label.length > 0) out.push(label);
-  }
-  return out;
 }
 
 function extractSource(row: Record<string, unknown>): SourceMeta {

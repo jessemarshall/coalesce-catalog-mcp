@@ -100,6 +100,17 @@ export function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+export function extractTagLabels(row: Record<string, unknown>): string[] {
+  if (!Array.isArray(row.tagEntities)) return [];
+  const out: string[] = [];
+  for (const t of row.tagEntities as Array<Record<string, unknown>>) {
+    const tag = t.tag as Record<string, unknown> | undefined;
+    const label = tag?.label;
+    if (typeof label === "string" && label.length > 0) out.push(label);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Owner identity resolution (email -> user record)
 // ---------------------------------------------------------------------------

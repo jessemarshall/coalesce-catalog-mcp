@@ -10,6 +10,7 @@ import {
   ENRICHMENT_BATCH_SIZE,
   isNonEmptyString,
   extractOwners,
+  extractTagLabels,
   hasOwner,
   chunk,
   resolveUserByEmail,
@@ -201,6 +202,45 @@ describe("hasOwner", () => {
         ownerEntities: [{ userId: null }, { userId: "u-1" }],
       })
     ).toBe(true);
+  });
+});
+
+// ── extractTagLabels ────────────────────────────────────────────────────────
+
+describe("extractTagLabels", () => {
+  it("returns empty array when tagEntities is missing", () => {
+    expect(extractTagLabels({})).toEqual([]);
+  });
+
+  it("returns empty array when tagEntities is not an array", () => {
+    expect(extractTagLabels({ tagEntities: null })).toEqual([]);
+    expect(extractTagLabels({ tagEntities: "nope" })).toEqual([]);
+  });
+
+  it("extracts non-empty string labels in order", () => {
+    expect(
+      extractTagLabels({
+        tagEntities: [
+          { tag: { label: "pii" } },
+          { tag: { label: "domain:finance" } },
+        ],
+      })
+    ).toEqual(["pii", "domain:finance"]);
+  });
+
+  it("skips entries with missing tag, missing label, non-string label, or empty label", () => {
+    expect(
+      extractTagLabels({
+        tagEntities: [
+          { tag: { label: "pii" } },
+          { tag: undefined },
+          { tag: { label: null } },
+          { tag: { label: 7 } },
+          { tag: { label: "" } },
+          { tag: { label: "ok" } },
+        ],
+      })
+    ).toEqual(["pii", "ok"]);
   });
 });
 
