@@ -530,7 +530,7 @@ export function defineGovernanceTools(
         title: "Search Data Quality Checks",
         description:
           "List data quality test results attached to tables or columns (e.g. dbt tests, Monte Carlo monitors, Soda checks, Great Expectations). Each record includes status (SUCCESS/WARNING/ALERT), result text (e.g. failure reason), externalId, source system, runAt timestamp, and tableId/columnId pointers.\n\n" +
-          "Scope by tableId to inspect a specific table's test coverage. Use catalog_get_table (when you have the id) to find assets lacking tests, then pair with this tool to grade existing coverage.",
+          "Scope by tableId to inspect a specific table's test coverage. To find tables lacking tests, enumerate candidates with catalog_search_tables and call this tool per tableId — a tableId returning 0 rows has no attached quality checks. For an aggregate coverage matrix across many tables in one call, use catalog_governance_scorecard with includeQualityCoverage: true.",
         inputSchema: SearchQualityChecksInputShape,
         annotations: READ_ONLY_ANNOTATIONS,
       },
