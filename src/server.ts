@@ -33,12 +33,6 @@ import { registerCatalogPrompts } from "./prompts/index.js";
 import { cleanupStaleSessions } from "./cache/store.js";
 import { withResponseExternalization } from "./mcp/tool-helpers.js";
 
-// Re-exported for back-compat: external callers and tests still import
-// `isReadOnlyMode` from "./server.js". The implementation now lives in
-// runtime-mode.ts so internal modules (e.g. mcp/introspection.ts) can
-// consume it without forming a server.ts ↔ introspection.ts runtime cycle.
-export { isReadOnlyMode };
-
 const SERVER_INSTRUCTIONS = `
 coalesce-catalog-mcp — Coalesce Catalog (Castor) Public GraphQL API, wrapped as
 MCP. Use this server for data catalog discovery, lineage, governance metadata,
