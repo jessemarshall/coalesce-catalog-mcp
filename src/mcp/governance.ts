@@ -871,7 +871,13 @@ export function defineGovernanceTools(
               REMOVE_USER_OWNERS,
               { data: input }
             );
-            return { success: data.removeUserOwners, userId: input.userId };
+            return {
+              success: data.removeUserOwners,
+              userId: input.userId,
+              ...(input.targetEntities
+                ? { requestedCount: input.targetEntities.length }
+                : {}),
+            };
           }
         ),
         client
@@ -953,7 +959,13 @@ export function defineGovernanceTools(
               REMOVE_TEAM_OWNERS,
               { data: input }
             );
-            return { success: data.removeTeamOwners, teamId: input.teamId };
+            return {
+              success: data.removeTeamOwners,
+              teamId: input.teamId,
+              ...(input.targetEntities
+                ? { requestedCount: input.targetEntities.length }
+                : {}),
+            };
           }
         ),
         client
