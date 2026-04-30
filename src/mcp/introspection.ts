@@ -4,7 +4,7 @@ import {
   READ_ONLY_ANNOTATIONS,
   type CatalogToolDefinition,
 } from "../catalog/types.js";
-import { isReadOnlyMode } from "../server.js";
+import { isReadOnlyMode } from "../runtime-mode.js";
 import { editDistance } from "../util/edit-distance.js";
 import { withErrorHandling } from "./tool-helpers.js";
 
