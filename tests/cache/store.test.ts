@@ -105,4 +105,64 @@ describe("cache store", () => {
   it("cleanupStaleSessions is safe when cache root doesn't exist yet", () => {
     expect(() => cleanupStaleSessions()).not.toThrow();
   });
+
+  // The session-cap path of cleanupStaleSessions: enforceSessionCap drops
+  // the oldest files once the session exceeds MAX_FILES_PER_SESSION (500).
+  // Previously exercised only incidentally — a regression in the sort
+  // direction (newest-first instead of oldest-first) would silently delete
+  // recent artifacts.
+  it("cleanupStaleSessions drops the oldest files when the session exceeds the cap", () => {
+    // Write 502 artifacts and stamp each with a strictly increasing mtime so
+    // the sort order is deterministic. The first two are the "oldest" and
+    // should be evicted.
+    const session = getSessionDir();
+    for (let i = 0; i < 502; i++) {
+      writeJsonArtifact(`tool/file-${i}.json`, { i });
+    }
+    for (let i = 0; i < 502; i++) {
+      const abs = join(session, `tool/file-${i}.json`);
+      const stamp = new Date(Date.now() - (502 - i) * 1000);
+      utimesSync(abs, stamp, stamp);
+    }
+
+    cleanupStaleSessions();
+
+    const remaining = listSessionArtifacts();
+    expect(remaining).toHaveLength(500);
+    const names = new Set(remaining.map((a) => a.relPath));
+    expect(names.has("tool/file-0.json")).toBe(false);
+    expect(names.has("tool/file-1.json")).toBe(false);
+    expect(names.has("tool/file-2.json")).toBe(true);
+    expect(names.has("tool/file-501.json")).toBe(true);
+  });
+
+  it("cleanupStaleSessions is a no-op below the cap", () => {
+    for (let i = 0; i < 10; i++) {
+      writeJsonArtifact(`tool/file-${i}.json`, { i });
+    }
+    cleanupStaleSessions();
+    expect(listSessionArtifacts()).toHaveLength(10);
+  });
+
+  // Orphan .tmp- files left from a mid-write crash must not count toward the
+  // cap (they are excluded from listSessionArtifacts) — otherwise an agent
+  // that crashes a few times would silently lose real artifacts when temps
+  // accumulate. This locks the exclusion at the cap-enforcement layer, not
+  // just at the listing layer.
+  it("orphan .tmp- files are not counted toward the session cap", () => {
+    const session = getSessionDir();
+    mkdirSync(join(session, "tool"), { recursive: true });
+    // 500 real artifacts (exactly at the cap) + 50 orphan temps.
+    for (let i = 0; i < 500; i++) {
+      writeJsonArtifact(`tool/file-${i}.json`, { i });
+    }
+    for (let i = 0; i < 50; i++) {
+      writeFileSync(join(session, "tool", `orphan-${i}.json.tmp-99-abc`), "stale");
+    }
+
+    cleanupStaleSessions();
+
+    // No real artifacts should have been evicted; we were exactly at the cap.
+    expect(listSessionArtifacts()).toHaveLength(500);
+  });
 });
