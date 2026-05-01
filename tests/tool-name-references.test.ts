@@ -105,3 +105,36 @@ describe("tool-name references in static context resources", () => {
     ).toEqual([]);
   });
 });
+
+describe("tool-name references in top-level docs", () => {
+  // Same regression class as the in-tree scans, but for human-facing docs
+  // (README.md, docs/prerelease.md, CLAUDE.md). README has 60+ catalog_*
+  // mentions and is the first thing a new contributor reads — a stale rename
+  // here misleads readers without a CI signal until the next typo PR.
+  const REPO_ROOT = join(SRC_ROOT, "..");
+  const files = [
+    join(REPO_ROOT, "README.md"),
+    join(REPO_ROOT, "CLAUDE.md"),
+    join(REPO_ROOT, "docs", "prerelease.md"),
+  ];
+
+  it("every catalog_* token in a top-level doc resolves to a real registered tool", () => {
+    const violations: Array<{ file: string; mention: string }> = [];
+    for (const file of files) {
+      const body = readFileSync(file, "utf8");
+      const mentions = body.match(TOOL_MENTION) ?? [];
+      for (const mention of mentions) {
+        if (!KNOWN_TOOL_NAMES.has(mention)) {
+          violations.push({
+            file: file.slice(REPO_ROOT.length + 1),
+            mention,
+          });
+        }
+      }
+    }
+    expect(
+      violations,
+      `unknown catalog_* tool name(s) referenced in top-level docs: ${JSON.stringify(violations)}`
+    ).toEqual([]);
+  });
+});
