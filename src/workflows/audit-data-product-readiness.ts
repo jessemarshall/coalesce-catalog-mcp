@@ -396,7 +396,7 @@ function gradeColumnDocs(
   } else {
     status = "fail";
     gaps.push(
-      `${coverage.pct}% of columns have descriptions (${coverage.described}/${coverage.total}) — below the ${COLUMN_DOC_WARN_PCT}% minimum. Use catalog_search_columns({ tableId, isDocumented: false }) to find undocumented columns and catalog_update_columns_metadata to describe them.`
+      `${coverage.pct}% of columns have descriptions (${coverage.described}/${coverage.total}) — below the ${COLUMN_DOC_WARN_PCT}% minimum. Use catalog_search_columns({ tableId, isDocumented: false }) to find undocumented columns and catalog_update_column_metadata to describe them.`
     );
   }
   return {
