@@ -17,7 +17,7 @@ import type {
   GetQualityChecksOutput,
 } from "../generated/types.js";
 import { withErrorHandling } from "../mcp/tool-helpers.js";
-import { isNonEmptyString, extractOwners } from "./shared.js";
+import { isNonEmptyString, extractOwners, extractTagLabels } from "./shared.js";
 
 type AssetKind = "TABLE" | "DASHBOARD";
 
@@ -111,14 +111,6 @@ interface ColumnCoverage {
   total: number;
   pct: number;
   sampled: boolean;
-}
-
-function extractTags(row: Record<string, unknown>): Array<{ label: string | null }> {
-  if (!Array.isArray(row.tagEntities)) return [];
-  return (row.tagEntities as Array<Record<string, unknown>>).map((t) => {
-    const tag = (t.tag as Record<string, unknown> | undefined) ?? {};
-    return { label: (tag.label as string | null) ?? null };
-  });
 }
 
 async function probeColumnDocCoverage(
@@ -323,10 +315,10 @@ function gradeOwnership(row: Record<string, unknown>): AxisResult {
 }
 
 function gradeTags(row: Record<string, unknown>): AxisResult {
-  const tags = extractTags(row);
+  const labels = extractTagLabels(row);
   const gaps: string[] = [];
   let status: AxisStatus;
-  if (tags.length === 0) {
+  if (labels.length === 0) {
     status = "warn";
     gaps.push(
       "No tags attached. Tag with a domain / data-product / sensitivity label via catalog_attach_tags. (Warn, not fail — some data products intentionally omit tags.)"
@@ -338,8 +330,8 @@ function gradeTags(row: Record<string, unknown>): AxisResult {
     name: "tags",
     status,
     signals: {
-      tagCount: tags.length,
-      labels: tags.map((t) => t.label),
+      tagCount: labels.length,
+      labels,
     },
     gaps,
   };
