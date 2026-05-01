@@ -64,7 +64,7 @@ Conventions:
 
 - `↑` = upstream (parent → this asset), `↓` = downstream (this asset → child)
 - One line per edge. Columns: asset name, age or ISO timestamp
-- For multi-hop trees from `catalog_explore_lineage` (if you've called it with depth > 1), indent each hop with `│  ` for the continuation and `├─` / `└─` for the last sibling
+- For multi-hop trees (e.g. from `catalog_get_column_lineage`, or from chaining `catalog_get_lineages` / `catalog_get_field_lineages` across hops), indent each hop with `│  ` for the continuation and `├─` / `└─` for the last sibling
 - Always call lineage tools with `hydrate: true` when a user is in the loop — skip it for agent-internal multi-step reasoning where IDs are enough
 - If an endpoint returns `hydrationUnavailable: true` (dashboard fields), render as `DASHBOARD_FIELD <uuid>` and note the limitation once at the end of the tree
 - The `lineageType` field (AUTOMATIC / MANUAL_CUSTOMER / MANUAL_OPS / OTHER_TECHNOS) is still present in the raw edge record — omit it from the tree unless the user explicitly asks about provenance, or unless the edge is non-AUTOMATIC (a manual edge on an otherwise auto-detected graph is usually a tell worth surfacing).
