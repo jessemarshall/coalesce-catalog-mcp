@@ -76,10 +76,6 @@ const PropagateTagsUpstreamInputShape = {
 // ── Constants ───────────────────────────────────────────────────────────────
 
 const UPSTREAM_HARD_CAP = 200;
-const WIDTH_CAPS: Record<number, number> = {
-  2: 2000,
-  3: 500,
-};
 const LINEAGE_PAGE_SIZE = 500;
 const LINEAGE_PAGES_PER_NODE_MAX = 20;
 const LINEAGE_FANOUT_PARALLELISM = 20;
@@ -198,6 +194,14 @@ interface TraversalResult {
   >;
 }
 
+function throwUpstreamCapacityExceeded(cap: number): never {
+  throw new Error(
+    `Upstream traversal reached more than ${cap} tables ` +
+      `(capacity gate). Reduce maxDepth, narrow the source asset's tag set, ` +
+      `or split into separate runs by sourceAssetId.`
+  );
+}
+
 async function traverseUpstream(
   client: CatalogClient,
   source: SourceAsset,
@@ -218,22 +222,12 @@ async function traverseUpstream(
     if (visitedAtDepth.has(pid)) continue;
     visitedAtDepth.set(pid, { depth: 1, pathFromSource: [pid] });
     if (visitedAtDepth.size > upstreamHardCap) {
-      throw new Error(
-        `Upstream traversal reached more than ${upstreamHardCap} tables ` +
-          `(capacity gate). Reduce maxDepth, narrow the source asset's tag set, ` +
-          `or split into separate runs by sourceAssetId.`
-      );
+      throwUpstreamCapacityExceeded(upstreamHardCap);
     }
   }
   let frontier = firstParents.slice();
 
   for (let depth = 2; depth <= maxDepth; depth++) {
-    if (frontier.length > WIDTH_CAPS[depth]) {
-      throw new Error(
-        `Upstream frontier too wide at depth ${depth}: ${frontier.length} nodes ` +
-          `exceeds the ${WIDTH_CAPS[depth]}-node cap. Reduce maxDepth.`
-      );
-    }
     const nextFrontier: string[] = [];
     const edgesPerNode: Array<{ parent: string; children: string[] }> = [];
     for (let i = 0; i < frontier.length; i += LINEAGE_FANOUT_PARALLELISM) {
@@ -258,11 +252,7 @@ async function traverseUpstream(
         });
         nextFrontier.push(grandparentId);
         if (visitedAtDepth.size > upstreamHardCap) {
-          throw new Error(
-            `Upstream traversal reached more than ${upstreamHardCap} tables ` +
-              `(capacity gate). Reduce maxDepth, narrow the source asset's tag set, ` +
-              `or split into separate runs by sourceAssetId.`
-          );
+          throwUpstreamCapacityExceeded(upstreamHardCap);
         }
       }
     }
@@ -566,8 +556,8 @@ export function definePropagateTagsUpstream(
         "**Default behaviour is dry-run (`dryRun: true`)**: returns the full plan with per-upstream-table tag decisions and the lineage path each upstream table sits on, and never mutates anything. Set `dryRun: false` AND `acknowledgeProvenanceSemantics: true` to execute. Without the acknowledgment flag the tool refuses — by design.\n\n" +
         "**Provenance semantics — REQUIRED reading before execution**:\n" +
         "  Upstream tag propagation is NOT symmetric to downstream. A 'Critical' tag on a presentation dashboard does NOT mean the upstream warehouse table is critical: that table may feed many consumers, of which the source is one. Tagging the table 'Critical' may misdirect downstream owners, falsely escalate alerts, or shift on-call ownership. The acknowledgment flag forces the agent to review the dry-run plan + provenance trail (lineage path from source to each upstream table) and confirm the propagation is semantically correct for every upstream target before the mutation runs.\n\n" +
-        "**Composes**: source-asset detail (table or dashboard) → upstream lineage BFS (depth 1-3, refuses on width caps: 2000 @depth2 / 500 @depth3) → upstream-table detail batch (current tags) → per-target diff plan with provenance trail → conditional `attachTags` mutations with batch-level partial-failure tracking.\n\n" +
-        "**Capacity gate**: refuses if upstream traversal reaches more than 200 tables. Narrow with `tagLabels`, reduce `maxDepth`, or split by `sourceAssetId`.\n\n" +
+        "**Composes**: source-asset detail (table or dashboard) → upstream lineage BFS (depth 1-3) → upstream-table detail batch (current tags) → per-target diff plan with provenance trail → conditional `attachTags` mutations with batch-level partial-failure tracking.\n\n" +
+        "**Capacity gate**: refuses with `Upstream traversal reached more than 200 tables` if the BFS reaches more than 200 distinct upstream tables (counted across all depths combined; tighter than `propagate_metadata`'s per-depth caps because upstream propagation is the higher-risk direction). The cap fires at the moment the 201st distinct table is enqueued. Narrow with `tagLabels`, reduce `maxDepth`, or split by `sourceAssetId`.\n\n" +
         "**Overwrite policy**:\n" +
         "  - `ifEmpty` (default) — only attach tags to upstream tables that currently have NO tags. Cannot clobber hand-curated metadata.\n" +
         "  - `overwrite` — additively merge: adds source tags missing from each upstream table; never removes target-native tags.\n" +
