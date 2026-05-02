@@ -396,6 +396,96 @@ describe("catalog_audit_data_product_readiness — failure modes per axis", () =
   });
 });
 
+describe("catalog_audit_data_product_readiness — tags axis null-label handling", () => {
+  // The Tag.label GraphQL scalar is non-nullable per src/generated/types.ts,
+  // but the previous local extractTags helper preserved nulls defensively.
+  // Pin the post-extractTagLabels semantic: tag entities that violate the
+  // schema (label is null/empty/non-string) are filtered, so a row with N
+  // such entities grades as warn (no usable labels) — NOT pass with N null
+  // labels in the signals payload as the old helper produced.
+  it("warns when every tag entity has a null label (schema-violating shape)", async () => {
+    const client = makeRouter({
+      tableDetail: {
+        id: "t-null-tags",
+        name: "T",
+        // Two tag entities, both carrying tag.label = null. Old behaviour:
+        // tagCount=2, status=pass, labels=[null, null]. New behaviour:
+        // tagCount=0, status=warn, labels=[].
+        tagEntities: [
+          { id: "te1", tag: { label: null } },
+          { id: "te2", tag: { label: null } },
+        ],
+      },
+    });
+    const tool = defineAuditDataProductReadiness(client);
+    const out = parseResult(
+      await tool.handler({
+        assetKind: "TABLE",
+        assetId: "t-null-tags",
+        axes: ["tags"],
+      })
+    );
+    const axis = (out.axes as Array<Record<string, unknown>>)[0];
+    expect(axis.status).toBe("warn");
+    expect(axis.signals).toEqual({ tagCount: 0, labels: [] });
+    expect(axis.gaps).toEqual([
+      expect.stringMatching(/No tags attached/i),
+    ]);
+  });
+
+  it("warns when every tag entity has an empty-string label", async () => {
+    // Same contract for empty strings — extractTagLabels filters
+    // length===0 strings out.
+    const client = makeRouter({
+      tableDetail: {
+        id: "t-empty-tags",
+        name: "T",
+        tagEntities: [{ id: "te1", tag: { label: "" } }],
+      },
+    });
+    const tool = defineAuditDataProductReadiness(client);
+    const out = parseResult(
+      await tool.handler({
+        assetKind: "TABLE",
+        assetId: "t-empty-tags",
+        axes: ["tags"],
+      })
+    );
+    const axis = (out.axes as Array<Record<string, unknown>>)[0];
+    expect(axis.status).toBe("warn");
+    expect(axis.signals).toEqual({ tagCount: 0, labels: [] });
+  });
+
+  it("counts only non-empty string labels when entities mix valid + invalid tags", async () => {
+    const client = makeRouter({
+      tableDetail: {
+        id: "t-mixed-tags",
+        name: "T",
+        tagEntities: [
+          { id: "te1", tag: { label: "Critical" } },
+          { id: "te2", tag: { label: null } },
+          { id: "te3", tag: { label: "" } },
+          { id: "te4", tag: { label: "PII" } },
+        ],
+      },
+    });
+    const tool = defineAuditDataProductReadiness(client);
+    const out = parseResult(
+      await tool.handler({
+        assetKind: "TABLE",
+        assetId: "t-mixed-tags",
+        axes: ["tags"],
+      })
+    );
+    const axis = (out.axes as Array<Record<string, unknown>>)[0];
+    expect(axis.status).toBe("pass");
+    expect(axis.signals).toEqual({
+      tagCount: 2,
+      labels: ["Critical", "PII"],
+    });
+  });
+});
+
 describe("catalog_audit_data_product_readiness — dashboard asset quirks", () => {
   it("returns status: 'na' for columnDocs and qualityChecks on a DASHBOARD", async () => {
     const client = makeRouter({
