@@ -482,44 +482,6 @@ describe("catalog_propagate_tags_upstream — guardrails", () => {
     expect(client.calls.map((c) => c.document)).not.toContain(ATTACH_TAGS);
   });
 
-  it("refuses when the depth-2 upstream frontier exceeds the 2000-node width cap", async () => {
-    // Step 1: dashboard -> 2001 immediate parent tables.
-    // Step 2: BFS would expand from each — refuse before issuing those calls.
-    // The 200-node hard cap would normally beat us to the punch, so override
-    // by using ONLY 2001 distinct depth-1 parents but exercising depth=2 path.
-    // Actually the hard cap fires earlier — to specifically exercise the
-    // width cap branch, we'd need to bypass the hard cap, which isn't
-    // configurable. So instead: confirm the depth-1 capacity gate fires here
-    // too with the same 2001-parent fan-out — both refusal paths produce a
-    // clean refusal that prevents mutation, which is the contract callers
-    // depend on.
-    const parents = Array.from({ length: 2001 }, (_, i) => `t-up${i}`);
-    const tables = new Map<string, { id: string; name: string; tagEntities: never[] }>();
-    for (const id of parents) {
-      tables.set(id, { id, name: id, tagEntities: [] });
-    }
-    const client = makeRouter({
-      sourceDashboard: {
-        id: "dash-1",
-        name: "D",
-        tagEntities: [{ tag: { id: "tg-1", label: "Critical" } }],
-      },
-      upstreamByChildDashboard: new Map([["dash-1", parents]]),
-      tablesByIds: tables,
-    });
-    const tool = definePropagateTagsUpstream(client);
-    const res = await tool.handler({
-      sourceAssetId: "dash-1",
-      sourceAssetType: "DASHBOARD",
-      maxDepth: 2,
-    });
-    expect(res.isError).toBe(true);
-    const msg = parseResult(res).error as string;
-    // Either error message is acceptable — both are documented refusals that
-    // prevent the propagation. We just need the workflow to refuse cleanly.
-    expect(msg).toMatch(/more than 200 tables|frontier too wide/);
-  });
-
   it("refuses when lineage pagination exceeds the 20-page-per-node ceiling", async () => {
     // Fake a server that always returns a full LINEAGE_PAGE_SIZE (500) page
     // forever. The workflow should refuse rather than silently emit a partial
@@ -564,13 +526,11 @@ describe("catalog_propagate_tags_upstream — guardrails", () => {
     });
     expect(res.isError).toBe(true);
     const msg = parseResult(res).error as string;
-    // Either the per-node 20-page lineage ceiling fires first, or the 200-table
-    // capacity gate does. Both are valid "complete or refuse" branches; just
-    // assert one of them rejected the call so the agent never sees a partial
-    // propagation plan.
-    expect(msg).toMatch(
-      /Lineage pagination exceeded 20 pages|more than 200 tables/
-    );
+    // Pagination ceiling fires inside fetchUpstreamParentTableIds before any
+    // visited-set / capacity-gate check runs, so this is the only reachable
+    // refusal branch under a "page never short" mock. Tightened from a
+    // disjunction so a regression that swaps which branch fires doesn't pass.
+    expect(msg).toMatch(/Lineage pagination exceeded 20 pages/);
   });
 
   it("refuses to plan when enrichment can't return rows for every reached upstream id", async () => {
