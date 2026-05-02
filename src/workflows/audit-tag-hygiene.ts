@@ -342,11 +342,10 @@ export function defineAuditTagHygiene(
       if (nearDuplicateThreshold > 0) {
         // Compare all pairs. For workspaces with <= 1000 tags this is at most
         // ~500K comparisons — fast enough for a single-shot audit.
-        const visited = new Set<string>();
+        // A tag can appear in multiple pairs with different partners (e.g.
+        // "ord" near "order" AND "ord" near "orde"), so no visited-pruning.
         for (let i = 0; i < tags.length; i++) {
-          if (visited.has(tags[i].id)) continue;
           for (let j = i + 1; j < tags.length; j++) {
-            if (visited.has(tags[j].id)) continue;
             const dist = editDistance(
               tags[i].label.toLowerCase(),
               tags[j].label.toLowerCase()
@@ -357,8 +356,6 @@ export function defineAuditTagHygiene(
                 tagIds: [tags[i].id, tags[j].id],
                 distance: dist,
               });
-              // Don't mark as visited — a tag can appear in multiple
-              // near-duplicate pairs with different partners.
             }
           }
         }
