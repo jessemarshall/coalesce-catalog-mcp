@@ -51,7 +51,7 @@ const PropagateTagsUpstreamInputShape = {
     .max(3)
     .optional()
     .describe(
-      "How many lineage hops upstream to propagate. 1 = immediate parents only (cheapest, completes always). 2 = parents-of-parents (refuses if frontier exceeds 2000 nodes). 3 = deep upstream (refuses if frontier exceeds 500). Default 1."
+      "How many lineage hops upstream to propagate. 1 = immediate parents only (cheapest, completes always). 2 = parents-of-parents. 3 = deep upstream. Default 1. The traversal refuses globally once it reaches more than 200 distinct upstream tables across all depths combined (capacity gate); narrow with `tagLabels` or split by `sourceAssetId` if the gate fires."
     ),
   overwritePolicy: z
     .enum(["ifEmpty", "overwrite"])
