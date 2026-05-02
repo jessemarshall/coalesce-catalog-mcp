@@ -239,6 +239,47 @@ describe("catalog_triage_quality_failures — capacity gate", () => {
     expect(msg).toMatch(/exceed the 5-check/);
     expect(msg).toMatch(/statusFilter/);
   });
+
+  it("refuses rather than silently truncate when the page ceiling is hit", async () => {
+    // QUALITY_PAGE_SIZE=100, QUALITY_MAX_PAGES=50 -> 5000 check ceiling.
+    // Stub the router so every page returns a full page of OK checks
+    // forever — the workflow has no way to filter server-side, so the
+    // failing-check filter happens client-side and the page loop has to
+    // refuse rather than silently miss anything past the ceiling.
+    const client = makeMockClient((document, variables) => {
+      if (document === GET_DATA_QUALITIES) {
+        const vars = variables as {
+          pagination: { nbPerPage: number; page: number };
+        };
+        const start = vars.pagination.page * vars.pagination.nbPerPage;
+        const data = Array.from({ length: vars.pagination.nbPerPage }, (_, i) => ({
+          id: `q${start + i}`,
+          name: `check_${start + i}`,
+          status: "OK",
+          result: null,
+          externalId: `ext-${start + i}`,
+          runAt: null,
+          url: null,
+          tableId: "t1",
+        }));
+        return {
+          getDataQualities: {
+            totalCount: 100000,
+            nbPerPage: vars.pagination.nbPerPage,
+            page: vars.pagination.page,
+            data,
+          },
+        };
+      }
+      throw new Error(`unexpected document: ${document.slice(0, 60)}`);
+    });
+    const tool = defineTriageQualityFailures(client);
+    const res = await tool.handler({ includeUpstreamPointers: false });
+    expect(res.isError).toBe(true);
+    const msg = parseResult(res).error as string;
+    expect(msg).toMatch(/pagination exceeded 50 pages/);
+    expect(msg).toMatch(/Refusing to emit a partial triage queue/);
+  });
 });
 
 describe("catalog_triage_quality_failures — triage scoring & ordering", () => {
