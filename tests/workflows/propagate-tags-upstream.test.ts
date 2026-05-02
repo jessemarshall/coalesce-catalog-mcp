@@ -450,6 +450,187 @@ describe("catalog_propagate_tags_upstream — provenance gate", () => {
   });
 });
 
+describe("catalog_propagate_tags_upstream — guardrails", () => {
+  it("refuses when upstream traversal exceeds the 200-table capacity gate", async () => {
+    // Build a single-hop fan-out from the dashboard to >200 distinct upstream
+    // tables. The cap should fire on the first BFS step before any downstream
+    // mutation work happens.
+    const upstreamIds = Array.from({ length: 250 }, (_, i) => `t-up${i}`);
+    const tables = new Map<string, { id: string; name: string; tagEntities: never[] }>();
+    for (const id of upstreamIds) {
+      tables.set(id, { id, name: id, tagEntities: [] });
+    }
+    const client = makeRouter({
+      sourceDashboard: {
+        id: "dash-1",
+        name: "D",
+        tagEntities: [{ tag: { id: "tg-1", label: "Critical" } }],
+      },
+      upstreamByChildDashboard: new Map([["dash-1", upstreamIds]]),
+      tablesByIds: tables,
+    });
+    const tool = definePropagateTagsUpstream(client);
+    const res = await tool.handler({
+      sourceAssetId: "dash-1",
+      sourceAssetType: "DASHBOARD",
+    });
+    expect(res.isError).toBe(true);
+    const msg = parseResult(res).error as string;
+    expect(msg).toMatch(/more than 200 tables/);
+    // Capacity-gate refusal must precede any mutation, even with the
+    // acknowledgment + skip-confirmations toggles set in another test path.
+    expect(client.calls.map((c) => c.document)).not.toContain(ATTACH_TAGS);
+  });
+
+  it("refuses when lineage pagination exceeds the 20-page-per-node ceiling", async () => {
+    // Fake a server that always returns a full LINEAGE_PAGE_SIZE (500) page
+    // forever. The workflow should refuse rather than silently emit a partial
+    // upstream plan.
+    const client = makeMockClient((document, variables) => {
+      if (document === GET_DASHBOARD_DETAIL) {
+        return {
+          getDashboards: {
+            data: [
+              {
+                id: "dash-1",
+                name: "D",
+                tagEntities: [{ tag: { id: "tg-1", label: "Critical" } }],
+              },
+            ],
+          },
+        };
+      }
+      if (document === GET_LINEAGES) {
+        const vars = variables as {
+          pagination: { nbPerPage: number; page: number };
+        };
+        const start = vars.pagination.page * vars.pagination.nbPerPage;
+        return {
+          getLineages: {
+            totalCount: 1_000_000,
+            nbPerPage: vars.pagination.nbPerPage,
+            page: vars.pagination.page,
+            data: Array.from({ length: vars.pagination.nbPerPage }, (_, i) => ({
+              parentTableId: `t-flood-${start + i}`,
+              childDashboardId: "dash-1",
+            })),
+          },
+        };
+      }
+      throw new Error(`unexpected document: ${document.slice(0, 60)}`);
+    });
+    const tool = definePropagateTagsUpstream(client);
+    const res = await tool.handler({
+      sourceAssetId: "dash-1",
+      sourceAssetType: "DASHBOARD",
+    });
+    expect(res.isError).toBe(true);
+    const msg = parseResult(res).error as string;
+    // Pagination ceiling fires inside fetchUpstreamParentTableIds before any
+    // visited-set / capacity-gate check runs, so this is the only reachable
+    // refusal branch under a "page never short" mock. Tightened from a
+    // disjunction so a regression that swaps which branch fires doesn't pass.
+    expect(msg).toMatch(/Lineage pagination exceeded 20 pages/);
+  });
+
+  it("refuses to plan when enrichment can't return rows for every reached upstream id", async () => {
+    // Lineage points at a parent table, but GET_TABLES_DETAIL_BATCH returns
+    // nothing for it. The completeness contract requires every reached id to
+    // be enriched — refuse rather than silently emit a partial plan.
+    const client = makeRouter({
+      sourceDashboard: {
+        id: "dash-1",
+        name: "D",
+        tagEntities: [{ tag: { id: "tg-1", label: "Critical" } }],
+      },
+      upstreamByChildDashboard: new Map([["dash-1", ["t-orphan"]]]),
+      // tablesByIds intentionally empty — t-orphan has no enrichment row.
+      tablesByIds: new Map(),
+    });
+    const tool = definePropagateTagsUpstream(client);
+    const res = await tool.handler({
+      sourceAssetId: "dash-1",
+      sourceAssetType: "DASHBOARD",
+    });
+    expect(res.isError).toBe(true);
+    const msg = parseResult(res).error as string;
+    expect(msg).toMatch(/Detail enrichment returned no row/);
+    expect(msg).toMatch(/t-orphan/);
+  });
+});
+
+describe("catalog_propagate_tags_upstream — TABLE-as-source path", () => {
+  it("propagates from a gold-layer TABLE source to its upstream tables", async () => {
+    const client = makeRouter({
+      sourceTable: {
+        id: "t-gold",
+        name: "GOLD_REVENUE",
+        tagEntities: [{ tag: { id: "tg-1", label: "Critical" } }],
+      },
+      upstreamByChildTable: new Map([["t-gold", ["t-silver"]]]),
+      tablesByIds: new Map([
+        ["t-silver", { id: "t-silver", name: "SILVER_FACT", tagEntities: [] }],
+      ]),
+    });
+    const tool = definePropagateTagsUpstream(client);
+    const out = parseResult(
+      await tool.handler({
+        sourceAssetId: "t-gold",
+        sourceAssetType: "TABLE",
+      })
+    );
+    const source = out.source as Record<string, unknown>;
+    expect(source.assetType).toBe("TABLE");
+    const plan = out.plan as Array<Record<string, unknown>>;
+    expect(plan).toHaveLength(1);
+    const tags = plan[0].changes as { tags: Record<string, unknown> };
+    expect(tags.tags.action).toBe("add");
+    expect(tags.tags.added).toEqual(["Critical"]);
+    // Provenance should reflect the TABLE source type.
+    const prov = plan[0].provenance as Record<string, unknown>;
+    expect(prov.sourceAssetType).toBe("TABLE");
+    expect(prov.sourceAssetName).toBe("GOLD_REVENUE");
+  });
+});
+
+describe("catalog_propagate_tags_upstream — every-tag-already-attached short-circuit", () => {
+  it("emits skip with the 'every selected source tag is already attached' reason", async () => {
+    const client = makeRouter({
+      sourceDashboard: {
+        id: "dash-1",
+        name: "D",
+        tagEntities: [{ tag: { id: "tg-1", label: "Critical" } }],
+      },
+      upstreamByChildDashboard: new Map([["dash-1", ["t-up1"]]]),
+      tablesByIds: new Map([
+        [
+          "t-up1",
+          {
+            id: "t-up1",
+            name: "T1",
+            // Already has 'Critical' — overwrite policy is needed to avoid
+            // the "ifEmpty: target has tags" branch first.
+            tagEntities: [{ tag: { id: "tg-1", label: "Critical" } }],
+          },
+        ],
+      ]),
+    });
+    const tool = definePropagateTagsUpstream(client);
+    const out = parseResult(
+      await tool.handler({
+        sourceAssetId: "dash-1",
+        sourceAssetType: "DASHBOARD",
+        overwritePolicy: "overwrite",
+      })
+    );
+    const plan = out.plan as Array<Record<string, unknown>>;
+    const tags = plan[0].changes as { tags: Record<string, unknown> };
+    expect(tags.tags.action).toBe("skip");
+    expect(tags.tags.reason).toMatch(/already attached/);
+    expect(tags.tags.alreadyPresent).toEqual(["Critical"]);
+  });
+});
+
 describe("catalog_propagate_tags_upstream — empty paths", () => {
   it("emits an empty plan when source has no tags", async () => {
     const client = makeRouter({
