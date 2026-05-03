@@ -395,4 +395,101 @@ describe("catalog_get_column_lineage", () => {
     // expanding b), but the visited set stops further expansion back to a.
     expect(downstream.edges).toHaveLength(2);
   });
+
+  it("walks upstream-only when direction is 'upstream' and skips the downstream call", async () => {
+    // Direct test for the upstream-only path. Existing tests cover
+    // `direction: 'both'` and `'downstream'`; the upstream-only branch was
+    // implicit in 'both' but never asserted on its own — meaning a
+    // refactor that broke walkDirection's upstream side wouldn't fail
+    // any specific test.
+    const client = buildWorld(LINEAR_WORLD);
+    const tool = defineColumnLineage(client);
+    const res = await tool.handler({ columnId: "col-c", direction: "upstream" });
+    const out = parseResult(res);
+    expect(out.downstream).toBeUndefined();
+    const upstream = out.upstream as { nodes: Array<Record<string, unknown>>; edges: unknown[] };
+    expect(upstream.nodes.map((n) => n.id).sort()).toEqual(["col-a", "col-b"]);
+    expect(upstream.edges).toHaveLength(2);
+  });
+
+  it("returns `not_a_column` when an FQN resolves to a TABLE rather than a column", async () => {
+    // 3-part FQN resolves to a table, not a column — column-lineage rejects
+    // because it can only walk column-grain lineage.
+    const client = buildWorld(LINEAR_WORLD);
+    const tool = defineColumnLineage(client);
+    const res = await tool.handler({ columnFQN: "WH.PUBLIC.TBL_A" });
+    const out = parseResult(res);
+    expect(out.error).toBe("not_a_column");
+    const detail = out.detail as string;
+    expect(detail).toMatch(/4-part path/);
+    expect(out.resolved).toBeDefined();
+  });
+
+  it("includes a `stats` block with reached counts and the maxNodes ceiling", async () => {
+    // Directly exercise the stats output shape. The existing tests inspect
+    // the nodes array but never the explicit counters that consumers might
+    // surface in a UI or parse to decide whether to paginate.
+    const client = buildWorld(LINEAR_WORLD);
+    const tool = defineColumnLineage(client);
+    const res = await tool.handler({
+      columnId: "col-a",
+      direction: "downstream",
+      maxNodes: 12345,
+    });
+    const out = parseResult(res);
+    const stats = out.stats as Record<string, unknown>;
+    // col-b + col-c reachable downstream from col-a; the root is excluded.
+    expect(stats.totalColumnsReached).toBe(2);
+    expect(stats.totalDashboardFieldsReached).toBe(1);
+    expect(stats.maxNodes).toBe(12345);
+  });
+
+  it("refuses with a pagination-ceiling error when a single column has more downstream edges than the per-node ceiling", async () => {
+    // Per fetchAllColumnEdges: FIELD_LINEAGE_PAGES_PER_NODE_MAX = 40 pages
+    // of FIELD_LINEAGE_PAGE_SIZE = 500 rows. We need a custom client that
+    // serves a full page on every request scoped by parentColumnId so the
+    // outer loop exhausts and throws — buildWorld's static-edges router
+    // can't simulate this. Use makeMockClient directly with a hand-rolled
+    // pagination responder that synthesises 500 rows per page until the
+    // tool's loop exhausts.
+    const PAGE_SIZE = 500;
+    const client = makeMockClient((document, variables) => {
+      if (document === GET_FIELD_LINEAGES) {
+        const vars = variables as {
+          scope: Record<string, unknown>;
+          pagination: { nbPerPage: number; page: number };
+        };
+        const data = Array.from({ length: PAGE_SIZE }, (_, i) => ({
+          id: `e-${vars.pagination.page}-${i}`,
+          parentColumnId: "col-hub",
+          // Synthetic children — these never need to resolve because the
+          // pagination ceiling fires before any enrichment runs.
+          childColumnId: `col-${vars.pagination.page}-${i}`,
+          lineageType: "AUTOMATIC" as const,
+        }));
+        return {
+          getFieldLineages: {
+            totalCount: 99_999_999,
+            nbPerPage: vars.pagination.nbPerPage,
+            page: vars.pagination.page,
+            data,
+          },
+        };
+      }
+      throw new Error(`unexpected document in ceiling test: ${document.slice(0, 40)}`);
+    });
+    const tool = defineColumnLineage(client);
+    // maxNodes is high enough not to trip the runaway-safety guard before
+    // the pagination ceiling fires (40 * 500 = 20K rows enqueued before
+    // throw).
+    const res = await tool.handler({
+      columnId: "col-hub",
+      direction: "downstream",
+      maxNodes: 50_000,
+    });
+    const out = parseResult(res);
+    // withErrorHandling routes the throw into a structured tool error.
+    expect((res as { isError?: boolean }).isError).toBe(true);
+    expect(out.error as string).toMatch(/Field-lineage pagination exceeded/);
+  });
 });
