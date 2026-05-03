@@ -491,5 +491,13 @@ describe("catalog_get_column_lineage", () => {
     // withErrorHandling routes the throw into a structured tool error.
     expect((res as { isError?: boolean }).isError).toBe(true);
     expect(out.error as string).toMatch(/Field-lineage pagination exceeded/);
+    // The pagination-ceiling guard must win the race against `exceeded
+    // maxNodes`. With maxNodes=50_000 and 40×500=20_000 unique children
+    // enqueued, the throw fires inside fetchAllColumnEdges before
+    // budget.consume sees the 50_001st node. A future regression that swaps
+    // the throw order — e.g. moving the budget check to fire on edge intake
+    // rather than node enqueue — would surface as the maxNodes message
+    // instead. Pinning a negative assertion here catches that swap.
+    expect(out.error as string).not.toMatch(/exceeded maxNodes/);
   });
 });
