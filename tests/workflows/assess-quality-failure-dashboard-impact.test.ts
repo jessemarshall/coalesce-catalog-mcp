@@ -521,3 +521,46 @@ describe("catalog_assess_quality_failure_dashboard_impact — criticality + rank
     expect(impact[0].blastRadiusScore).toBe(10);
   });
 });
+
+describe("catalog_assess_quality_failure_dashboard_impact — pagination ceiling", () => {
+  it("refuses rather than silently truncating when quality-check pagination exceeds the per-call ceiling", async () => {
+    // Simulate a workspace where every page is full and totalCount keeps
+    // climbing past the 50-page * 100-row ceiling. The mock returns full
+    // pages with a totalCount that never satisfies the page-fetched check,
+    // forcing the loop to exhaust QUALITY_MAX_PAGES.
+    const PAGE_SIZE = 100;
+    const TOTAL_REPORTED = 99_999; // far above 50 * 100 = 5000
+    const client = makeMockClient((document, variables) => {
+      if (document === GET_DATA_QUALITIES) {
+        const vars = variables as {
+          pagination: { nbPerPage: number; page: number };
+        };
+        const data = Array.from({ length: PAGE_SIZE }, (_, i) => ({
+          id: `q-${vars.pagination.page}-${i}`,
+          name: `c-${vars.pagination.page}-${i}`,
+          status: "SUCCESS",
+          result: null,
+          externalId: `ext-${vars.pagination.page}-${i}`,
+          runAt: null,
+          url: null,
+          tableId: "t-misc",
+        }));
+        return {
+          getDataQualities: {
+            totalCount: TOTAL_REPORTED,
+            nbPerPage: vars.pagination.nbPerPage,
+            page: vars.pagination.page,
+            data,
+          },
+        };
+      }
+      throw new Error(`unexpected document: ${document.slice(0, 60)}`);
+    });
+    const tool = defineAssessQualityFailureDashboardImpact(client);
+    const res = await tool.handler({});
+    expect(res.isError).toBe(true);
+    const msg = parseResult(res).error as string;
+    expect(msg).toMatch(/Quality check pagination exceeded/);
+    expect(msg).toMatch(/Refusing to emit a partial dashboard-impact report/);
+  });
+});

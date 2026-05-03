@@ -174,12 +174,29 @@ async function fetchAllFailingChecks(
     }
     const fetched = (page + 1) * QUALITY_PAGE_SIZE;
     const rows = resp.getDataQualities.data;
-    if (rows.length < QUALITY_PAGE_SIZE) break;
+    if (rows.length < QUALITY_PAGE_SIZE) return failing;
     const total = resp.getDataQualities.totalCount;
     if (typeof total === "number" && Number.isFinite(total) && fetched >= total)
-      break;
+      return failing;
   }
-  return failing;
+  // Workspace has more quality checks than the per-call ceiling can reach.
+  // Filtering happens client-side, so any failing checks past the ceiling
+  // would silently fall out of the dashboard-impact report. Match the
+  // "complete or refuse" contract used by triage-quality-failures rather
+  // than emit a partial answer.
+  //
+  // The tool's input schema has no tableId/tableIds parameter, so the only
+  // narrowing axis exposed is statusFilter. Per-table triage requires
+  // dropping out of this tool entirely and using catalog_search_quality_checks
+  // (which DOES accept a tableId scope).
+  throw new Error(
+    `Quality check pagination exceeded ${QUALITY_MAX_PAGES} pages ` +
+      `(>${QUALITY_MAX_PAGES * QUALITY_PAGE_SIZE} total checks scanned). ` +
+      `Refusing to emit a partial dashboard-impact report — failing checks past ` +
+      `the ceiling would be silently dropped. Narrow with statusFilter: ['ALERT'], ` +
+      `or triage manually with catalog_search_quality_checks per tableId ` +
+      `instead of this tool.`
+  );
 }
 
 async function enrichTables(
