@@ -190,6 +190,83 @@ describe("catalog_get_lineages handler — output shaping", () => {
     expect(data[0].direction).toBeUndefined();
   });
 
+  it("annotates `direction: downstream` when only parentSourceId is set", async () => {
+    // parentSourceId is a valid GetLineagesScope filter but was previously
+    // ignored by the direction-inference logic — a caller scoping by source
+    // alone got `direction: undefined` even though the field-lineage
+    // equivalent (childDashboardSourceId etc.) already produced upstream/
+    // downstream. Aligned to mirror that behaviour.
+    const { tools } = makeTools(() => ({
+      getLineages: {
+        page: 0,
+        nbPerPage: 20,
+        totalCount: 1,
+        data: [
+          {
+            id: "edge-1",
+            parentTableId: "t-1",
+            childTableId: "t-2",
+            createdAt: 1700000000000,
+            refreshedAt: 1700000000000,
+          },
+        ],
+      },
+    }));
+    const tool = find(tools, "catalog_get_lineages");
+    const res = await tool.handler({ parentSourceId: "src-1" });
+    const data = parseResult(res).data as Array<Record<string, unknown>>;
+    expect(data[0].direction).toBe("downstream");
+  });
+
+  it("annotates `direction: upstream` when only childSourceId is set", async () => {
+    const { tools } = makeTools(() => ({
+      getLineages: {
+        page: 0,
+        nbPerPage: 20,
+        totalCount: 1,
+        data: [
+          {
+            id: "edge-1",
+            parentTableId: "t-1",
+            childTableId: "t-2",
+            createdAt: 1700000000000,
+            refreshedAt: 1700000000000,
+          },
+        ],
+      },
+    }));
+    const tool = find(tools, "catalog_get_lineages");
+    const res = await tool.handler({ childSourceId: "src-2" });
+    const data = parseResult(res).data as Array<Record<string, unknown>>;
+    expect(data[0].direction).toBe("upstream");
+  });
+
+  it("annotates `direction: specific` when both parentSourceId and childSourceId are set", async () => {
+    const { tools } = makeTools(() => ({
+      getLineages: {
+        page: 0,
+        nbPerPage: 20,
+        totalCount: 1,
+        data: [
+          {
+            id: "edge-1",
+            parentTableId: "t-1",
+            childTableId: "t-2",
+            createdAt: 1700000000000,
+            refreshedAt: 1700000000000,
+          },
+        ],
+      },
+    }));
+    const tool = find(tools, "catalog_get_lineages");
+    const res = await tool.handler({
+      parentSourceId: "src-1",
+      childSourceId: "src-2",
+    });
+    const data = parseResult(res).data as Array<Record<string, unknown>>;
+    expect(data[0].direction).toBe("specific");
+  });
+
   it("converts createdAt + refreshedAt epoch millis to ISO timestamps", async () => {
     const { tools } = makeTools(() => ({
       getLineages: {

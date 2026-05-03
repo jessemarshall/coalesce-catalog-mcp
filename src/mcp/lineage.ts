@@ -272,12 +272,21 @@ function toIso(millis: unknown): string | undefined {
 }
 
 function inferAssetDirection(input: Record<string, unknown>): Direction | undefined {
+  // parentSourceId / childSourceId are valid GetLineagesScope filters that
+  // narrow edges by the source on the parent / child side of the link, just
+  // like the *Id variants. Honour them here so a caller passing only one of
+  // them gets the same `direction` annotation that inferFieldDirection
+  // already produces for its source-id equivalents — without this, an asset
+  // -level call scoped purely by source returned `direction: undefined` while
+  // the field-level equivalent returned `upstream`/`downstream`.
   const hasParent =
     typeof input.parentTableId === "string" ||
-    typeof input.parentDashboardId === "string";
+    typeof input.parentDashboardId === "string" ||
+    typeof input.parentSourceId === "string";
   const hasChild =
     typeof input.childTableId === "string" ||
-    typeof input.childDashboardId === "string";
+    typeof input.childDashboardId === "string" ||
+    typeof input.childSourceId === "string";
   if (hasParent && !hasChild) return "downstream";
   if (hasChild && !hasParent) return "upstream";
   if (hasParent && hasChild) return "specific";
