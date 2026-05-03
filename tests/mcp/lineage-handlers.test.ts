@@ -241,6 +241,39 @@ describe("catalog_get_lineages handler — output shaping", () => {
     expect(data[0].direction).toBe("upstream");
   });
 
+  it("omits `direction` when only non-side scope filters are set (lineageIds, withChildAssetType)", async () => {
+    // GetLineagesScope accepts filters that don't pin a side (lineageIds,
+    // withChildAssetType, etc.). These narrow the result set without
+    // implying upstream/downstream — emitting a `direction` for them
+    // would be a contract bug. Pinning the negative case here so a future
+    // "always emit a direction" change can't slip through.
+    const { tools } = makeTools(() => ({
+      getLineages: {
+        page: 0,
+        nbPerPage: 20,
+        totalCount: 1,
+        data: [
+          {
+            id: "edge-1",
+            parentTableId: "t-1",
+            childTableId: "t-2",
+            createdAt: 1700000000000,
+            refreshedAt: 1700000000000,
+          },
+        ],
+      },
+    }));
+    const tool = find(tools, "catalog_get_lineages");
+
+    const lineageIdsRes = await tool.handler({ lineageIds: ["edge-1"] });
+    const lineageIdsData = parseResult(lineageIdsRes).data as Array<Record<string, unknown>>;
+    expect(lineageIdsData[0].direction).toBeUndefined();
+
+    const assetTypeRes = await tool.handler({ withChildAssetType: "DASHBOARD" });
+    const assetTypeData = parseResult(assetTypeRes).data as Array<Record<string, unknown>>;
+    expect(assetTypeData[0].direction).toBeUndefined();
+  });
+
   it("annotates `direction: specific` when both parentSourceId and childSourceId are set", async () => {
     const { tools } = makeTools(() => ({
       getLineages: {
