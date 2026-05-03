@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient } from "../src/client.js";
@@ -112,11 +112,16 @@ describe("tool-name references in top-level docs", () => {
   // mentions and is the first thing a new contributor reads — a stale rename
   // here misleads readers without a CI signal until the next typo PR.
   const REPO_ROOT = join(SRC_ROOT, "..");
+  // CLAUDE.md is intentionally gitignored — it's a per-clone symlink into the
+  // sibling mcp-smithy repo (see commit 840f0d0). The file is absent in CI
+  // checkouts, so include it only when it actually exists. Filtering keeps the
+  // scan opportunistic: it locks tool-name accuracy locally where the symlink
+  // resolves, and a missing CLAUDE.md never fails CI.
   const files = [
     join(REPO_ROOT, "README.md"),
     join(REPO_ROOT, "CLAUDE.md"),
     join(REPO_ROOT, "docs", "prerelease.md"),
-  ];
+  ].filter((f) => existsSync(f));
 
   it("every catalog_* token in a top-level doc resolves to a real registered tool", () => {
     const violations: Array<{ file: string; mention: string }> = [];
