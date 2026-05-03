@@ -184,13 +184,18 @@ async function fetchAllFailingChecks(
   // would silently fall out of the dashboard-impact report. Match the
   // "complete or refuse" contract used by triage-quality-failures rather
   // than emit a partial answer.
+  //
+  // The tool's input schema has no tableId/tableIds parameter, so the only
+  // narrowing axis exposed is statusFilter. Per-table triage requires
+  // dropping out of this tool entirely and using catalog_search_quality_checks
+  // (which DOES accept a tableId scope).
   throw new Error(
     `Quality check pagination exceeded ${QUALITY_MAX_PAGES} pages ` +
       `(>${QUALITY_MAX_PAGES * QUALITY_PAGE_SIZE} total checks scanned). ` +
       `Refusing to emit a partial dashboard-impact report — failing checks past ` +
-      `the ceiling would be silently dropped. Investigate the workspace's ` +
-      `quality-check volume, narrow with statusFilter: ['ALERT'], or scope by ` +
-      `running catalog_search_quality_checks per tableId before this tool.`
+      `the ceiling would be silently dropped. Narrow with statusFilter: ['ALERT'], ` +
+      `or triage manually with catalog_search_quality_checks per tableId ` +
+      `instead of this tool.`
   );
 }
 
